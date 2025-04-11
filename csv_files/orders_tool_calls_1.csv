@@ -1,0 +1,111 @@
+order_id,state,timestamp
+ZS18_0,order placed,2025-04-04 12:05:00
+ZS18_0,order confirmed,2025-04-04 12:06:00
+ZS18_0,order being prepared,2025-04-04 12:07:00
+ZS18_0,order being delivered,2025-04-04 13:17:30
+ZS18_0,order delivered,2025-04-04 15:52:00
+DP31_1,order placed,2025-04-04 12:15:30
+DP31_1,order confirmed,2025-04-04 12:16:00
+DP31_1,order being prepared,2025-04-04 12:16:30
+DP31_1,order being delivered,2025-04-04 13:16:00
+DP31_1,order delivered,2025-04-04 15:53:00
+HC48_2,order placed,2025-04-04 12:26:00
+HC48_2,order confirmed,2025-04-04 12:27:00
+HC48_2,order being prepared,2025-04-04 12:29:30
+HC48_2,order being delivered,2025-04-04 13:17:00
+HC48_2,order delivered,2025-04-04 15:54:00
+NN91_3,order placed,2025-04-04 12:25:00
+NN91_3,order confirmed,2025-04-04 12:28:00
+NN91_3,order being prepared,2025-04-04 12:30:00
+NN91_3,order being delivered,2025-04-04 13:15:30
+NN91_3,order delivered,2025-04-04 15:55:00
+BU43_4,order placed,2025-04-04 12:23:00
+BU43_4,order confirmed,2025-04-04 12:29:00
+BU43_4,order being delivered,2025-04-04 12:45:00
+BU43_4,order delivered,2025-04-04 12:55:30
+CZ20_5,order placed,2025-04-04 12:35:30
+CZ20_5,order being prepared,2025-04-04 12:36:30
+CZ20_5,order being delivered,2025-04-04 13:15:00
+CZ20_5,order delivered,2025-04-04 15:56:00
+YF93_6,order placed,2025-04-04 12:33:30
+YF93_6,order being prepared,2025-04-04 12:46:00
+YF93_6,order being delivered,2025-04-04 13:06:00
+YF93_6,order delivered,2025-04-04 13:14:00
+GU47_7,order placed,2025-04-04 12:33:30
+GU47_7,order being prepared,2025-04-04 12:47:00
+GU47_7,order being delivered,2025-04-04 13:07:00
+GU47_7,order delivered,2025-04-04 13:14:30
+FU13_8,order placed,2025-04-04 12:55:00
+FU13_8,order confirmed,2025-04-04 12:56:00
+FU13_8,order being prepared,2025-04-04 12:57:00
+FU13_8,order being delivered,2025-04-04 13:18:00
+FU13_8,order delivered,2025-04-04 15:57:00
+ZS51_9,order placed,2025-04-04 12:54:30
+ZS51_9,order confirmed,2025-04-04 12:56:30
+ZS51_9,order being prepared,2025-04-04 12:57:30
+ZS51_9,order being delivered,2025-04-04 13:16:30
+ZS51_9,order delivered,2025-04-04 15:58:00
+UG69_10,order placed,2025-04-04 13:30:00
+UG69_10,order confirmed,2025-04-04 13:25:00
+UG69_10,order being prepared,2025-04-04 13:46:00
+UG69_10,order being delivered,2025-04-04 14:38:00
+UG69_10,order delivered,2025-04-04 15:59:00
+US47_11,order placed,2025-04-04 13:28:00
+US47_11,order confirmed,2025-04-04 13:25:20
+US47_11,order being prepared,2025-04-04 13:46:00
+US47_11,order being delivered,2025-04-04 14:28:00
+US47_11,order delivered,2025-04-04 16:00:00
+UO35_12,order placed,2025-04-04 13:30:00
+UO35_12,order confirmed,2025-04-04 13:25:40
+UO35_12,order being prepared,2025-04-04 13:46:00
+UO35_12,order being delivered,2025-04-04 14:38:00
+UO35_12,order delivered,2025-04-04 16:01:00
+IW21_13,order placed,2025-04-04 13:26:00
+IW21_13,order confirmed,2025-04-04 13:26:00
+IW21_13,order being prepared,2025-04-04 13:46:00
+IW21_13,order being delivered,2025-04-04 14:28:30
+IW21_13,order delivered,2025-04-04 16:11:30
+TV19_14,order placed,2025-04-04 13:30:00
+TV19_14,order confirmed,2025-04-04 13:26:20
+TV19_14,order being prepared,2025-04-04 13:46:00
+TV19_14,order being delivered,2025-04-04 14:38:00
+TV19_14,order delivered,2025-04-04 16:22:00
+WH04_15,order placed,2025-04-04 14:02:30
+WH04_15,order confirmed,2025-04-04 13:56:00
+WH04_15,order being prepared,2025-04-04 13:57:00
+WH04_15,order being delivered,2025-04-04 14:38:00
+WH04_15,order delivered,2025-04-04 16:22:00
+MX19_16,order placed,2025-04-04 14:07:00
+MX19_16,order confirmed,2025-04-04 14:07:00
+MX19_16,order being prepared,2025-04-04 14:09:00
+MX19_16,order being delivered,2025-04-04 14:29:00
+MX19_16,order delivered,2025-04-04 16:22:00
+SL46_17,order placed,2025-04-04 14:15:00
+SL46_17,order confirmed,2025-04-04 14:08:00
+SL46_17,order being prepared,2025-04-04 14:10:00
+SL46_17,order being delivered,2025-04-04 15:40:00
+SL46_17,order delivered,2025-04-04 15:41:00
+DX79_18,order placed,2025-04-04 14:10:00
+DX79_18,order confirmed,2025-04-04 14:09:00
+DX79_18,order being prepared,2025-04-04 14:11:00
+DX79_18,order being delivered,2025-04-04 15:40:00
+DX79_18,order delivered,2025-04-04 15:42:00
+KG45_19,order placed,2025-04-04 14:20:30
+KG45_19,order confirmed,2025-04-04 14:21:30
+KG45_19,order being prepared,2025-04-04 14:30:00
+KG45_19,order being delivered,2025-04-04 15:40:00
+KG45_19,order delivered,2025-04-04 15:43:00
+JU76_20,order placed,2025-04-04 14:22:30
+JU76_20,order confirmed,2025-04-04 14:31:00
+JU76_20,order being prepared,2025-04-04 14:48:00
+JU76_20,order being delivered,2025-04-04 15:10:00
+JU76_20,order delivered,2025-04-04 16:22:00
+LD16_21,order placed,2025-04-04 14:40:30
+LD16_21,order confirmed,2025-04-04 14:38:30
+LD16_21,order being prepared,2025-04-04 14:48:00
+LD16_21,order being delivered,2025-04-04 15:10:00
+LD16_21,order delivered,2025-04-04 16:22:00
+WF21_22,order placed,2025-04-04 15:05:30
+WF21_22,order being prepared,2025-04-04 15:08:30
+WF21_22,order being delivered,2025-04-04 15:10:00
+WF21_22,order delivered,2025-04-04 16:22:00

@@ -13,34 +13,6 @@ def generate_order_id(order_counter):
     random_id = f"{letters}{digits}_{order_counter}"
     return random_id
 
-def get_weather(timestamp):
-    # weather 
-    # - 9:00-13:00 rainy
-    # - 13:00 - 17:00: calm 
-    # - 17:00-22:00: very windy
-    """dt = datetime.fromisoformat(timestamp)
-    hour = dt.hour"""
-    hour = timestamp.hour
-    if hour >= 9 and hour <=13:
-        return 'rainy'
-    elif hour >13 and hour <=17:
-        return 'calm'
-    elif hour > 17 and hour < 22:
-        return 'very windy'
-    else:
-        return 'No weather available for the given hour'
-def get_traffic(timestamp, distance):
-    """dt = datetime.fromisoformat(timestamp)
-    hour = dt.hour"""
-    hour = timestamp.hour
-    if distance <=6:
-        if (hour >=12 and hour <=13) or (hour >=17 and hour <=20):
-            return 'busy traffic'
-        else:
-            return 'normal traffic'
-    else:
-        return 'normal traffic'
-
 # Characters and names of potential customers
 
 characters = [
@@ -117,6 +89,7 @@ def generate_random_customer():
 import numpy as np
 import datetime
 
+# generate random number of orders
 def generate_num_orders(timestamp):
     """
     Generate the number of orders arriving at a pizzeria within the next 10 minutes 
@@ -132,8 +105,8 @@ def generate_num_orders(timestamp):
 
     # Define the average number of orders per minute (lambda) based on time of day
     arrival_rates = {
-        11: 6/60, 12: 12/60, 13: 8/60, 14: 7/60,  # Lunch peak
-        18: 7/60, 19: 8/60, 20: 6/60, 21: 5/60,  # Dinner peak
+        11: 6/60, 12: 12/60, 13: 10/60, 14: 7/60,  # Lunch peak
+        18: 10/60, 19: 11/60, 20: 6/60, 21: 5/60,  # Dinner peak
         8: 1/60, 9: 1/60, 10: 1.5/60,       # Morning low
         15: 1/60, 16: 3/60, 17: 5/60,       # Afternoon moderate
         22: 3/60, 23: 1/60,            # Late night low
@@ -153,6 +126,9 @@ def generate_num_orders(timestamp):
 
     return num_orders
 
+
+# Get latest states of uncompleted order
+
 from typing import TypedDict, List, Dict
 
 class Orderstate(TypedDict):
@@ -167,10 +143,14 @@ class CustomerInfo(TypedDict):
     character: str
     distance: str
     
-all_orders_dict: Dict[str, Orderstate] = {}  # all orders' states 
-un_orders_dict: Dict[str, Orderstate] = {} # uncompleted orders' states
-id2customer_dict: Dict[str, CustomerInfo] = {}  # Key: order ID (str), Value: CustomerInfo dict
-
+# state to action dict:
+state2act_dict = {
+    'oder confirmed': 'you confirmed',
+    'oder being prepared': 'you are baking it and you started baking at',
+    'oder being delivered': 'you re on the way to deliver it and you started delivering it at'
+}
+def state2act(state):
+    return state2act_dict.get(state, state)
 # get latest state of an order 
 def get_latest_states(un_orders_dict: Dict[str, Orderstate]) -> str:
     result_lines = []
@@ -180,7 +160,7 @@ def get_latest_states(un_orders_dict: Dict[str, Orderstate]) -> str:
             latest_state = order["states"][-1]
             latest_timestamp = order["timestamps"][-1]
             result_lines.append(
-                f"Order ID {order_id} of {order['pizza_type']}, from {order['customer_name']}, {order['distance']} away, is {latest_state}, at {latest_timestamp}"
+                f"Order ID {order_id} of {order['pizza_type']}, from {order['customer_name']}, {order['distance']} away, is {latest_state}, which means {state2act(latest_state)} at {latest_timestamp}"
             )
     
     return "\n".join(result_lines)

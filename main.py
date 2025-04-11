@@ -1,6 +1,4 @@
 def main():
-    print("Hello from eventlogsimulation!")
-
-
+    pass
 if __name__ == "__main__":
     main()
