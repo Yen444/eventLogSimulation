@@ -258,7 +258,7 @@ def extract_act_states(bpmn_path, llm=llm):
     prompt = PromptTemplate.from_template(sys_prompt)
     
     # Use the Pydantic model directly, not as a dictionary
-    structured_llm = llm.with_structured_output(ListActivityProcessState, include_raw=True)
+    structured_llm = llm.with_structured_output(ListActivityProcessState)
 
     chain = prompt | structured_llm
 

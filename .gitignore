@@ -9,4 +9,8 @@ wheels/
 # Virtual environments
 .venv
 # env varaiables
-.env*
+*.env
+*.bpmn
+*.csv
+*.xes
+*.txt
