@@ -17,4 +17,10 @@ class ConfigLoader:
     def get_num_agents(self):
         return self.config.get('num_agents', {})
     def get_agent_actions(self):
-        return self.config.get('agent_actions', {})
+        return self.config.get('process_data').get('agent_actions', {})
+    def get_process_summary(self):
+        return self.config.get('process_data').get('process_summary', '')
+    def get_start_end_events(self):
+        return self.config.get('process_data').get('start_end_events', {})
+    def get_activities_flow(self):
+        return self.config.get('process_data').get('activities_flow', {})

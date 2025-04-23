@@ -1,5 +1,7 @@
-# Function to read .bpmn file and return a single string
+import random
+import string 
 
+# Function to read .bpmn file and return a single string
 def read_bpmn_file(bpmn_path: str) -> str:
     """
     Reads a BPMN file and returns its content as a single string.
@@ -25,4 +27,26 @@ def read_bpmn_file(bpmn_path: str) -> str:
         raise UnicodeDecodeError("utf-8", b"", 0, 1, "Failed to decode BPMN file with UTF-8 encoding.")
     except IOError as e:
         raise IOError(f"An error occurred while reading the BPMN file: {e}")
+
+# Function generate a random process ID of 3 letters and 2 digits and this ID should be unique
+def generate_process_id(used_ids:list) -> str:
+    """
+    Generates a unique process ID consisting of 3 letters and 2 digits.
+
+    Args:
+        used_ids (list): List of already used process IDs.
+
+    Returns:
+        str: A unique process ID.
+    """
+    while True:
+        letters = ''.join(random.choices(string.ascii_uppercase, k=3))
+        digits = ''.join(random.choices(string.digits, k=2))
+        process_id = f"{letters}{digits}"
+        if process_id not in used_ids:
+            used_ids.append(process_id)
+            return process_id
+    
+
+
 

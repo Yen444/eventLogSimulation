@@ -1,0 +1,49 @@
+{
+    "demographics": ["name", "age", "gender"],
+    "external_factors": ["temperature", "traffic"],
+    "process_data": {
+        "agent_actions": {
+            "Customer Service Representative": [
+                "Send Out Mortgage Offer",
+                "Update Case File and Archive"
+            ],
+            "Administration": [
+                "Assess Mortgage Details",
+                "Request Outstanding Documents",
+                "Finalize Mortgage Application",
+                "Update Case Details and Archive"
+            ] 
+        },
+        "start_end_events": {
+            "start_events": [
+                "startEvent"
+            ],
+            "first_activities": [
+                "Send Out Mortgage Offer"
+            ],
+            "end_events": [
+                "endEvent",
+                "Mortgage in System",
+                "endEvent"
+            ],
+            "last_activities": [
+                "Update Case File and Archive",
+                "Finalize Mortgage Application",
+                "Update Case Details and Archive"
+            ]
+        },
+        "act_states": {
+            "Send Out Mortgage Offer": "Mortgage Offer Sent",
+            "Assess Mortgage Details": "Mortgage Details Assessed",
+            "Request Outstanding Documents": "Documents Requested",
+            "Update Case File and Archive": "Case File Updated and Archived",
+            "Finalize Mortgage Application": "Mortgage Application Finalized",
+            "Update Case Details and Archive": "Case Details Updated and Archived"
+        }
+      },
+    "num_agents": {
+        "Customer Service Representative": 2,
+        "Administration": 2
+    }  
+  }
+  

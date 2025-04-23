@@ -105,7 +105,36 @@ class ProcessSummary(BaseModel):
     """Structured output for LLM extracting process summary"""
     process_sumary: str = Field(
         description="A short summary of the BPMN process")
+
+### Structured output for LLM extracting activity flow
+class ActivityFlow(BaseModel):
+    """Structured output for LLM extracting activity flow"""
+    activity: str = Field(
+        description="The name of the BPMN activity"
+    )
+    next_activities: List[str] = Field(
+        description="A list of activities that come after the current activity"
+    )
     
+    @field_validator('activity', 'next_activities')
+    @classmethod
+    def validate_activity_flow(cls, v):
+        if not isinstance(v, str) and not isinstance(v, list):
+            raise ValueError("activity must be a string and next_activities and previous_activities must be lists")
+        return v
+class ListActivityFlow(BaseModel):
+    """Structured output for LLM extracting activity flow"""
+    activity_flows: List[ActivityFlow] = Field(
+        description="A list of ActivityFlow objects, each containing an activity and its corresponding next activities"
+    )
+
+    @field_validator('activity_flows')
+    @classmethod
+    def validate_activity_flows(cls, v):
+        if not isinstance(v, list) or not all(isinstance(item, ActivityFlow) for item in v):
+            raise ValueError("activity_flows must be a list of ActivityFlow objects")
+        return v
+     
 ########### BPMNExtractor class ########### 
 # This class is responsible for extracting all necessary information from the BPMN model, which are needed for the simulation.
 class BPMNExtractor():
@@ -223,6 +252,45 @@ class BPMNExtractor():
         start_end_events = chain.invoke({'model': self.model_string})
 
         return start_end_events
+    
+    def extract_activity_flow(self)-> ListActivityFlow:
+        """Extracts the flow of activities in the BPMN model."""
+        # Define the system prompt for the LLM
+        sys_prompt = """
+        You are an expert in business process modeling, and your task is to analyze BPMN process models described in XML format (.bpmn files). These models conform to the BPMN 2.0 standard.
+
+        Given a BPMN model:
+
+        ```xml
+        {model}
+        
+        Extract the control flow between tasks (activities) based on the sequence flows. Your goal is to generate a mapping of each task to its immediate successor task(s), i.e., the tasks that directly follow it in the process flow.
+        
+        Instructions:
+        - The activities are represented as tasks in the BPMN model.
+        - The flow of activities is determined by the sequence flows connecting them.
+        - If a task has no direct successors (e.g., it leads to an end event), list an empty array for next_activities.
+        - Ensure all activity names are returned as defined in the BPMN model (not IDs).
+        
+        Return your analysis in the following format:
+        - activity: <activity_name>
+        next_activities: [<next_activity1>, <next_activity2>, ...]
+
+        List each activity and its corresponding next activities separately using the format above.
+        """
+
+        prompt = PromptTemplate.from_template(sys_prompt)
+        
+        # Use the Pydantic model directly, not as a dictionary
+        structured_llm = llm.with_structured_output(ListActivityFlow)
+
+        # build the chain with the prompt and the structured LLM
+        chain = prompt | structured_llm
+        
+        ## Invoke the LLM with the model string
+        act_flow = chain.invoke({'model': self.model_string})
+
+        return act_flow
 
     def extract_act_states(self)-> ListActivityProcessState:
         """Extracts the mapping between activities and their corresponding process states from the BPMN model."""
@@ -273,6 +341,7 @@ class BPMNExtractor():
             role_actions = self.extract_role_actions()
             start_end_events = self.extract_start_end_events()
             act_states = self.extract_act_states()
+            act_flow = self.extract_activity_flow()
 
             return {
                 "process_summary": process_summary.process_sumary,
@@ -283,7 +352,8 @@ class BPMNExtractor():
                     "end_events": start_end_events.end_events,
                     "last_activities": start_end_events.last_activities
                 },
-                "act_states": {act_state.activity: act_state.process_state for act_state in act_states.activity_process_states}
+                "act_states": {act_state.activity: act_state.process_state for act_state in act_states.activity_process_states},
+                "act_flow": {activity_flow.activity: activity_flow.next_activities for activity_flow in act_flow.activity_flows}
             }
         except Exception as e:
             raise RuntimeError(f"An error occurred during BPMN extraction: {e}")
