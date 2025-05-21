@@ -2,6 +2,9 @@ from pydantic import BaseModel, Field, create_model
 from typing import List, Dict, Optional, Any
 from langchain_core.prompts import PromptTemplate
 
+# utils functions
+from simulation.llm_utils import generate_random_text_with_mem_chatbot
+
 from dotenv import load_dotenv
 import os
 
@@ -11,7 +14,10 @@ api_key = os.getenv('GOOGLE_API_KEY')
 
 from langchain_google_genai import ChatGoogleGenerativeAI
 
-llm = ChatGoogleGenerativeAI(model='gemini-2.0-flash', temperature=1.0)
+llm_low = ChatGoogleGenerativeAI(model='gemini-2.0-flash', temperature=0.0)
+llm_mid = ChatGoogleGenerativeAI(model='gemini-2.0-flash', temperature=0.5)
+llm_high = ChatGoogleGenerativeAI(model='gemini-2.0-flash', temperature=1.0)
+
 
 class Demographics(BaseModel):
     """Demographics of the agent"""
@@ -45,7 +51,7 @@ class Agent(BaseModel):
         return demographics_model
     
     # Generate demographics of the agent
-    def _generate_demographics(self, llm = llm):
+    def _generate_demographics(self, llm):
         """Generate demographics of the agent"""
         if not self.role or not self.demographics_attributes:
             raise ValueError("Role and demographics are required to generate demographics.")
@@ -53,9 +59,14 @@ class Agent(BaseModel):
         demographics_list = ', '.join(self.demographics_attributes)
         # pydantic model for demographics
         demographics_model = self._generating_demographics_model()
+        # add random text to the prompt
+        random_text = generate_random_text_with_mem_chatbot()
+        print(f'random_text: {random_text}\n')
+        # create prompt for demographics
         sys_prompt = """
         Given a person with the role of a {role}, randomly generate demographics of that person. \
         The demographics should include the following attributes: {demographics_list}.
+        {random_text}
         Return the output in a structured format, listing each attribute and its corresponding value:
         - <attribute>: <value>
         - <attribute>: <value>
@@ -64,14 +75,17 @@ class Agent(BaseModel):
         prompt = PromptTemplate.from_template(sys_prompt)
         structured_llm = llm.with_structured_output(demographics_model)
         chain = prompt | structured_llm
-        demographics = chain.invoke({"role": self.role, "demographics_list": demographics_list})
+        demographics = chain.invoke({"role": self.role, "demographics_list": demographics_list, "random_text": random_text})
+        print(f'demographics: {demographics}\n')
         
         # write to demographics values
         self.demographics_values = [demographics.model_dump()[attr] for attr in self.demographics_attributes]
 
         return demographics
+    
+    # Add a function to evaluate the generated demographics and re-generate new ones if needed
 
-    def create_prompt(self, llm = llm):
+    def create_prompt(self, llm = llm_high):
         """Create prompt for the agent"""
         role = self.role
         actions = ', '.join(self.actions)
@@ -102,7 +116,7 @@ class Agent(BaseModel):
         """
         self.prompt = prompt
     
-    def take_action(self, process_summary:str, process_state:str, current_time:str, external_factors:list, external_values:dict, llm=llm) -> AgentOutput:
+    def take_action(self, process_summary:str, process_state:str, current_time:str, external_factors:list, external_values:dict, llm=llm_mid) -> AgentOutput:
         """Take action based on the prompt and return the output"""
 
         structured_llm = llm.with_structured_output(ListAgentOutput)

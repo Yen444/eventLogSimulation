@@ -91,7 +91,7 @@ class AgentManager:
 
         for agent_role, actions in role_actions.items():
             if actions is not None:
-                num_agents = agent_numbers.get(agent_role, 1)
+                num_agents = agent_numbers.get(agent_role, 2)
                 for _ in range(num_agents):
                     agent = Agent(
                         role=agent_role,
@@ -279,12 +279,13 @@ class SimulationEngine:
         end_time = datetime.datetime.fromisoformat(end_time)
         inter_arrival_time = datetime.timedelta(seconds=inter_arrival_time)
 
-        current_time = start_time
+        """current_time = start_time
         while current_time < end_time:
+            print(f"Current time: {current_time}")
             # We have to initialize the process, it is better than letting llms generate process id because they will always generate the same id
             self.process_manager.initialize_process()
             # calling on agents to take action
             for agent in self.agent_manager.agents:
                 self.step(agent, current_time)
-            current_time += inter_arrival_time
+            current_time += inter_arrival_time"""
 
