@@ -34,6 +34,19 @@ class ListAgentOutput(BaseModel):
     """Structured Agent Output List"""
     agent_outputs: List[AgentOutput] = Field(description="List of agent outputs")
 
+from simulation.simulation_engine_2 import ConfigManager
+
+class InternalFactorsManager:
+    def __init__(self, config_manager: ConfigManager):
+        self.config_manager = config_manager
+        self.internal_factors = config_manager.configs.get('internal_factors', [])
+        self.action_internal_factors = config_manager.configs.get('action_internal_factors', {})
+    
+    def action2internal_factors(self, action: str):
+        pass
+
+    def generate_internal_values(self, current_time):
+        pass
 
 class Agent(BaseModel):
     role: str = Field(description="Agent's role in the process")
@@ -42,6 +55,7 @@ class Agent(BaseModel):
     actions: List[str] = Field(..., description="Agent's possible actions")
     prompt: str = Field(default='', description="Prompt for the agent")
     available: bool = Field(default=True, description="Agent's availability status")
+    
     
     # Create a dynamic pydantic model for demographics
     def _generating_demographics_model(self):
@@ -130,3 +144,8 @@ class Agent(BaseModel):
             "external_values": external_values
         })
         return agent_output
+    
+    def take_action_and_handoff(self, process_summary:str, process_state:str, current_time:str, external_factors:list, external_values:dict, llm=llm_mid):
+        agent_output = self.take_action(process_summary, process_state, current_time, external_factors, external_values, llm)
+        # handoff the agent output to the next agent
+        pass

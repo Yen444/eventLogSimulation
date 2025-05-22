@@ -31,8 +31,13 @@ class logEvent(BaseModel):
     process_id: str = Field(description="Unique identifier for the process instance")
     action: str = Field(description="Type of the event")
     timestamp: str = Field(description="Timestamp of the event")
-    external_values: str = Field(description="External factors which can affect the agent's action and the whole process")
     agent: Agent = Field(description="Agent who performed the action")
+    # external factor / action related attributes
+    external_values: Optional[str] = Field(default=None, description="External factors which can affect the agent's action and the whole process") 
+    # internal factor/ trace related attributes
+    internal_values: Optional[str] = Field(default=None, description="Internal factors which can affect the agent's action and the whole process")
+    # experience-related data / action related attributes
+    feedback: Optional[str] = Field(default=None, description="Feedback from the agent about the action they took (easy, hard, sastisfied, unsatisfied, etc.)")
     
 class ProcessInstance(BaseModel):
     """Process instance for the simulation"""
@@ -40,66 +45,89 @@ class ProcessInstance(BaseModel):
     events: List[logEvent] = Field(default_factory=list, description="List of events in the process instance")
 
 
+import os
+import json
+
 class ConfigManager:
-    def __init__(self, config_path, bpmn_path):
-        self.config_path = config_path
+    def __init__(self, user_config_path, bpmn_path, extracted_config_path, simulation_config_path):
+        self.user_config_path = user_config_path
         self.bpmn_path = bpmn_path
+        self.extracted_config_path = extracted_config_path
+        self.simulation_config_path = simulation_config_path
         self.configs = None
 
-    def _extract_process_data(self):
-        """Extract process data from the BPMN file."""
-        bpmn_extractor = BPMNExtractor(self.bpmn_path, self.config_path)
-        return bpmn_extractor.extract_all_process_data()
-
-    def _load_existing_configs(self):
-        """Load existing simulation configs if the file exists, otherwise return an empty dict."""
-        if os.path.exists(self.config_path):
-            with open(self.config_path, 'r', encoding='utf-8') as f:
+    def _load_config(self, path):
+        """Load a JSON config file if it exists, otherwise return an empty dict."""
+        if os.path.exists(path):
+            with open(path, 'r', encoding='utf-8') as f:
                 return json.load(f)
         return {}
 
-    def _save_configs(self, configs):
-        """Save the merged configs to the config file."""
-        with open(self.config_path, 'w', encoding='utf-8') as f:
+    def _save_config(self, path, configs):
+        """Save a config dictionary to a JSON file."""
+        with open(path, 'w', encoding='utf-8') as f:
             json.dump(configs, f, ensure_ascii=False, indent=4)
 
+    def _extract_process_data(self):
+        """Extract process data from the BPMN file and save to extracted_config."""
+        bpmn_extractor = BPMNExtractor(self.bpmn_path, self.extracted_config_path)
+        extracted_data = bpmn_extractor.extract_all_process_data()
+        self._save_config(self.extracted_config_path, extracted_data)
+        return extracted_data
+
     def update_and_load_configs(self):
-        """Update config with extracted process data and return the full merged config."""
-        existing_configs = self._load_existing_configs()
-        process_data = self._extract_process_data()
+        """Load user and extracted configs, extract if needed, merge and save simulation config."""
+        user_config = self._load_config(self.user_config_path)
+        extracted_config = self._load_config(self.extracted_config_path)
 
-        if not isinstance(existing_configs, dict) or not isinstance(process_data, dict):
-            raise ValueError("Both existing configs and process data must be dictionaries.")
+        # Perform extraction if extracted config is missing or empty
+        if not extracted_config:
+            extracted_config = self._extract_process_data()
 
-        merged_configs = {**existing_configs, **process_data}
-        self._save_configs(merged_configs)
+        if not isinstance(user_config, dict) or not isinstance(extracted_config, dict):
+            raise ValueError("Both user and extracted configs must be dictionaries.")
 
-        self.configs = merged_configs
-        return merged_configs
+        merged_config = {**user_config, **extracted_config}
+        self._save_config(self.simulation_config_path, merged_config)
+
+        self.configs = merged_config
+        return merged_config
+
     
 class AgentManager:
     def __init__(self, config_manager: ConfigManager):
         self.config_manager = config_manager
-        self.agents: List[Agent] = []
+        self.org_agents: List[Agent] = []
+        self.ext_agents: List[Agent] = []
 
-    def create_agents(self):
+    def create_org_agents(self):
         """Create agents based on the configuration."""
         simulation_configs = self.config_manager.update_and_load_configs()
         role_actions = simulation_configs.get('role_actions', {})
         demographics = simulation_configs.get('demographics', [])
-        agent_numbers = simulation_configs.get('num_agents', {})
+        agent_numbers = simulation_configs.get('num_org_agents', {})
 
         for agent_role, actions in role_actions.items():
-            if actions is not None:
-                num_agents = agent_numbers.get(agent_role, 2)
-                for _ in range(num_agents):
-                    agent = Agent(
-                        role=agent_role,
-                        demographics_attributes=demographics,
-                        actions=actions,
-                    )
-                    agent.create_prompt()
-                    self.agents.append(agent)
+            num_agents = agent_numbers.get(agent_role, 2)
+            for _ in range(num_agents):
+                agent = Agent(
+                    role=agent_role,
+                    demographics_attributes=demographics,
+                    actions=actions,
+                )
+                agent.create_prompt()
+                self.org_agents.append(agent)
+    
+    def create_ext_agent_onfly(self, role:str):
+        """Create agents on the fly based on the cofigurations or handoff"""
+        simulation_configs = self.config_manager.update_and_load_configs()
+        role_actions = simulation_configs.get('role_actions', {})
+        demographics = simulation_configs.get('demographics', [])
+        return Agent(
+            role=role,
+            demographics_attributes=demographics,
+            actions=role_actions.get(role, []),
+        )
 
 class ProcessManager:
     def __init__(self, log_path):
@@ -237,7 +265,10 @@ class ExternalFactorsManager:
         self.recent_external_values[current_time] = external_values.model_dump()
 
         return ', '.join([f"{k}: {v}" for k, v in external_values.model_dump().items()])
-    
+
+
+
+
 class SimulationEngine:
     def __init__(self, bpmn_path, config_path, log_path):
         self.config_manager = ConfigManager(config_path, bpmn_path)
