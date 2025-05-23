@@ -1,49 +1,103 @@
 {
-    "demographics": ["name", "age", "gender"],
-    "external_factors": ["temperature", "traffic"],
-    "process_data": {
-        "agent_actions": {
-            "Customer Service Representative": [
-                "Send Out Mortgage Offer",
-                "Update Case File and Archive"
-            ],
-            "Administration": [
-                "Assess Mortgage Details",
-                "Request Outstanding Documents",
-                "Finalize Mortgage Application",
-                "Update Case Details and Archive"
-            ] 
-        },
-        "start_end_events": {
-            "start_events": [
-                "startEvent"
-            ],
-            "first_activities": [
-                "Send Out Mortgage Offer"
-            ],
-            "end_events": [
-                "endEvent",
-                "Mortgage in System",
-                "endEvent"
-            ],
-            "last_activities": [
-                "Update Case File and Archive",
-                "Finalize Mortgage Application",
-                "Update Case Details and Archive"
-            ]
-        },
-        "act_states": {
-            "Send Out Mortgage Offer": "Mortgage Offer Sent",
-            "Assess Mortgage Details": "Mortgage Details Assessed",
-            "Request Outstanding Documents": "Documents Requested",
-            "Update Case File and Archive": "Case File Updated and Archived",
-            "Finalize Mortgage Application": "Mortgage Application Finalized",
-            "Update Case Details and Archive": "Case Details Updated and Archived"
-        }
-      },
-    "num_agents": {
-        "Customer Service Representative": 2,
-        "Administration": 2
-    }  
-  }
-  
+    "demographics": [
+        "name",
+        "age",
+        "gender"
+    ],
+    "external_factors": [
+        "temperature",
+        "traffic"
+    ],
+    "process_summary": "The car insurance claim process begins with the customer submitting claim documentation. The notification department checks the documentation and registers the claim. The handling department then checks the insurance and performs an assessment. If the claim is rejected, the customer is notified. If the claim is approved, a repair is arranged with a garage, and payment is scheduled. Finally, the customer is notified of the claim resolution. The Garage receives damage information and payment details during the repair and payment scheduling. ",
+    "org_agents": [
+        "Notification department",
+        "Handling department"
+    ],
+    "num_org_agents": {
+        "Notification department": 2,
+        "Handling department": 2
+    },
+    "ext_agents": [
+        "Customer",
+        "Garage"
+    ],
+    "trigger_agent": "Customer",
+    "role_actions": {
+        "Notification department": [
+            "Check documentation",
+            "Register claim"
+        ],
+        "Handling department": [
+            "Check insurance",
+            "Perform assessmet",
+            "Reject claim",
+            "Arrange repair",
+            "Schedule payment",
+            "Notify customer"
+        ],
+        "Customer": ["Submit claim"],
+        "Garage": ["repair vehicle", "receive payment"]
+    },
+    "internal_factors": [
+        "vehicle",
+        "registration_number",
+        "incident description",
+        "damage",
+        "insurance_number",
+        "payment_amount"
+    ],
+    "action_internal_factors": {
+        "submit claim": [
+            "vehicle",
+            "registration_number",
+            "incident description",
+            "damage",
+            "insurance_number"
+        ],
+        "repair vehicle": [
+            "payment_amount"
+        ]
+    },
+    "start_end_events": {
+        "start_events": [
+            "startEvent"
+        ],
+        "first_activities": [
+            "Check documentation"
+        ],
+        "end_events": [
+            "endEvent"
+        ],
+        "last_activities": [
+            "Notify customer"
+        ]
+    },
+    "act_states": {
+        "Check documentation": "Documentation Checked",
+        "Register claim": "Claim Registered",
+        "Check insurance": "Insurance Checked",
+        "Perform assessmet": "Assessment Performed",
+        "Reject claim": "Claim Rejected",
+        "Arrange repair": "Repair Arranged",
+        "Schedule payment": "Payment Scheduled",
+        "Notify customer": "Customer Notified"
+    },
+    "act_flow": {
+        "Check documentation": [
+            "Register claim"
+        ],
+        "Register claim": [
+            "Check insurance"
+        ],
+        "Check insurance": [
+            "Perform assessmet"
+        ],
+        "Perform assessmet": [],
+        "Reject claim": [],
+        "Arrange repair": [
+            "Schedule payment"
+        ],
+        "Schedule payment": [],
+        "Notify customer": []
+    }
+}

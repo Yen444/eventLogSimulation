@@ -3,11 +3,10 @@ from langchain_core.prompts import PromptTemplate
 from typing import List, Dict, Any, Optional
 
 from .bpmn_extraction import BPMNExtractor
-from .config_loader import ConfigLoader
 from .agent import Agent
-from .utils import generate_process_id
+from .utils import generate_process_id, generate_agent_id
+from .cordinator import Cordinator
 
-import random
 from collections import OrderedDict
 import datetime
 import csv
@@ -49,10 +48,10 @@ import os
 import json
 
 class ConfigManager:
-    def __init__(self, user_config_path, bpmn_path, extracted_config_path, simulation_config_path):
-        self.user_config_path = user_config_path
+    def __init__(self,  bpmn_path, extracted_config_path, user_config_path, simulation_config_path):
         self.bpmn_path = bpmn_path
         self.extracted_config_path = extracted_config_path
+        self.user_config_path = user_config_path
         self.simulation_config_path = simulation_config_path
         self.configs = None
 
@@ -77,19 +76,31 @@ class ConfigManager:
 
     def update_and_load_configs(self):
         """Load user and extracted configs, extract if needed, merge and save simulation config."""
-        user_config = self._load_config(self.user_config_path)
-        extracted_config = self._load_config(self.extracted_config_path)
+        # If simulation config exists and is valid, load and return it
+        if self.simulation_config_path:
+            configs = self._load_config(self.simulation_config_path)
+            if configs:
+                self.configs = configs
+                return configs
 
-        # Perform extraction if extracted config is missing or empty
+        # Load user config (required)
+        user_config = self._load_config(self.user_config_path)
+        if not user_config:
+            raise ValueError("User config is required.")
+
+        # Load or extract extracted config
+        extracted_config = self._load_config(self.extracted_config_path)
         if not extracted_config:
             extracted_config = self._extract_process_data()
+            self._save_config(self.extracted_config_path, extracted_config)
 
+        # Validate configs
         if not isinstance(user_config, dict) or not isinstance(extracted_config, dict):
             raise ValueError("Both user and extracted configs must be dictionaries.")
 
+        # Merge and save
         merged_config = {**user_config, **extracted_config}
         self._save_config(self.simulation_config_path, merged_config)
-
         self.configs = merged_config
         return merged_config
 
@@ -99,6 +110,31 @@ class AgentManager:
         self.config_manager = config_manager
         self.org_agents: List[Agent] = []
         self.ext_agents: List[Agent] = []
+        self.cordinator: Cordinator = None
+    
+    
+    def create_trigger_agent_onfly(self):
+        """Create a trigger agent based on the configuration."""
+        simulation_configs = self.config_manager.update_and_load_configs()
+        role_actions = simulation_configs.get('role_actions', {})
+        demographics = simulation_configs.get('demographics', [])
+        trigger_agent = simulation_configs.get('trigger_agent', None)
+
+        if trigger_agent:
+            agent = Agent(
+                role=trigger_agent,
+                demographics_attributes=demographics,
+                actions=role_actions.get(trigger_agent, [])
+            )
+            agent.create_trigger_prompt()
+            used_ids = [agent.id for agent in self.org_agents] + [agent.id for agent in self.ext_agents]
+            agent_id = generate_agent_id(used_ids=used_ids)
+            agent.id = agent_id
+            self.ext_agents.append(agent)
+            return agent
+        else:
+            raise ValueError("Trigger agent role is not defined in the configuration.")
+
 
     def create_org_agents(self):
         """Create agents based on the configuration."""
@@ -116,22 +152,46 @@ class AgentManager:
                     actions=actions,
                 )
                 agent.create_prompt()
+                used_ids = [agent.id for agent in self.org_agents] + [agent.id for agent in self.ext_agents]
+                agent_id = generate_agent_id(used_ids=used_ids)
+                agent.id = agent_id
                 self.org_agents.append(agent)
-    
+
     def create_ext_agent_onfly(self, role:str):
         """Create agents on the fly based on the cofigurations or handoff"""
         simulation_configs = self.config_manager.update_and_load_configs()
         role_actions = simulation_configs.get('role_actions', {})
         demographics = simulation_configs.get('demographics', [])
-        return Agent(
+        agent = Agent(
             role=role,
             demographics_attributes=demographics,
             actions=role_actions.get(role, []),
         )
+        agent.create_prompt()
+        used_ids = [agent.id for agent in self.org_agents] + [agent.id for agent in self.ext_agents]
+        agent_id = generate_agent_id(used_ids=used_ids)
+        agent.id = agent_id
+        self.ext_agents.append(agent)
+        return agent
+    
+    def create_cordinator(self):
+        """Create a cordinator agent"""
+        simulation_configs = self.config_manager.update_and_load_configs()
+        process_summary = simulation_configs.get('process_summary', '')
+        return Cordinator(
+            role='cordinator',
+            process_summary=process_summary
+        ) 
+    
+    def get_agent_by_id(self, agent_id: str) -> Optional[Agent]:
+        """Get an agent by its ID."""
+        for agent in self.org_agents + self.ext_agents:
+            if agent.id == agent_id:
+                return agent
 
 class ProcessManager:
     def __init__(self, log_path):
-        self.incomplete_processes: Dict[str, ProcessInstance] = {}
+        self.incomplete_processes: List[ProcessInstance] = []
         self.log_events: List[logEvent] = []
         self.log_path = log_path 
 
@@ -158,22 +218,27 @@ class ProcessManager:
                 "agent": json.dumps({attr: value for attr, value in zip(log_event.agent.demographics_attributes, log_event.agent.demographics_values)})
             })
     
-    def initialize_process(self):
-        """Initialize a new process instance."""
-        # generate a unique process id
-        used_process_ids = [log.process_id for log in self.log_events]
+    # generating process id if trigger event happens
+
+    def generate_process_id(self):
+        """Generate a unique process ID."""
+        used_process_ids = list({log.process_id for log in self.log_events})
         process_id = generate_process_id(used_ids=used_process_ids)
-        # create a new process instance
-        process_instance = ProcessInstance(process_id=process_id)
-        # add the process instance to the incomplete processes
-        self.incomplete_processes[process_id] = process_instance
+        return process_id
+    
+    def get_related_process(self, process_id: str) -> str:
+        """Get the related process instance."""
+        for process_instance in self.incomplete_processes:
+            if process_instance.process_id == process_id:
+                process_state = f'Process ID: {process_instance.process_id}, Last Event: {process_instance.events[-1].action if process_instance.events else 'No action is taken so far'}, Last Timestamp: {process_instance.events[-1].timestamp if process_instance.events else 'None'}\n'
+                return process_state
     
     def get_incomplete_process_state(self) ->str:
         """Get the current state of incomplete processes."""
         process_states = ""
-        for process_id, process_instance in self.incomplete_processes.items():
+        for process_instance in self.incomplete_processes:
             last_event = process_instance.events[-1] if process_instance.events else None
-            process_state = f'"Process ID: {process_id}, Last Event: {last_event.action if last_event else 'No action is taken so far'}, Last Timestamp: {last_event.timestamp if last_event else 'None'}'
+            process_state = f'Process ID: {process_instance.process_id}, Last Event: {last_event.action if last_event else 'No action is taken so far'}, Last Timestamp: {last_event.timestamp if last_event else 'None'}\n'
             process_states += process_state
         return process_states
     
@@ -187,13 +252,16 @@ class ProcessManager:
         # update process instances
         if log_event.action in last_activities:
             # remove the process instance from the incomplete processes
-            if log_event.process_id in self.incomplete_processes:
-                del self.incomplete_processes[log_event.process_id]
+            for process_instance in self.incomplete_processes:
+                if process_instance.process_id == log_event.process_id:
+                    # remove the process instance from the incomplete processes
+                    self.incomplete_processes.remove(process_instance)
+                    break
         else:
             # add the process instance to the incomplete processes
             process_id = log_event.process_id
             # check if the process instance is already in the incomplete processes
-            if log_event.process_id not in self.incomplete_processes:
+            if log_event.process_id not in [process_instance.process_id for process_instance in self.incomplete_processes]:
                 process_instance = ProcessInstance(process_id=process_id)
                 # add the log event to the process instance
                 process_instance.events.append(log_event)
@@ -201,8 +269,11 @@ class ProcessManager:
             else:
                 # if the process instance is already in the incomplete processes, just add the log event to it
                 # and update the process instance
-                process_instance = self.incomplete_processes[process_id]
-                process_instance.events.append(log_event)
+                for process_instance in self.incomplete_processes:
+                    if process_instance.process_id == process_id:
+                        # add the log event to the process instance
+                        process_instance.events.append(log_event)
+                        break
 
 class ExternalFactorsManager:
     def __init__(self, config_manager: ConfigManager, llm=llm):
@@ -294,14 +365,24 @@ class SimulationEngine:
         )
         ####
         for agent_output in out.agent_outputs:
-            log_event = logEvent(
-                process_id= agent_output.process_id,
-                action=agent_output.action,
-                timestamp=agent_output.timestamp,
-                external_values=external_values,
-                agent=agent
-            )
-            self.process_manager.update_process(log_event=log_event, last_activities=self.config_manager.configs.get('start_end_events', {}).get('last_activities', []))
+            if agent_output.action != None:
+                if agent_output.process_id:
+                    log_event = logEvent(
+                        process_id= agent_output.process_id,
+                        action=agent_output.action,
+                        timestamp=agent_output.timestamp,
+                        external_values=external_values,
+                        agent=agent
+                    )
+                else:
+                    log_event = logEvent(
+                        process_id=self.process_manager.generate_process_id(),
+                        action=agent_output.action,
+                        timestamp=agent_output.timestamp,
+                        external_values=external_values,
+                        agent=agent
+                    )
+                self.process_manager.update_process(log_event=log_event, last_activities=self.config_manager.configs.get('start_end_events', {}).get('last_activities', []))
 
     def run(self, start_time, end_time, inter_arrival_time):
         """Run the simulation."""
@@ -310,13 +391,36 @@ class SimulationEngine:
         end_time = datetime.datetime.fromisoformat(end_time)
         inter_arrival_time = datetime.timedelta(seconds=inter_arrival_time)
 
-        """current_time = start_time
+        current_time = start_time
         while current_time < end_time:
             print(f"Current time: {current_time}")
-            # We have to initialize the process, it is better than letting llms generate process id because they will always generate the same id
-            self.process_manager.initialize_process()
-            # calling on agents to take action
-            for agent in self.agent_manager.agents:
+            # We have to initialize the process by calling the trigger agent
+            print(f'Calling trigger agent')
+            trigger_agent = self.create_trigger_agent_onfly()
+            # trigger agent takes action
+            print(f'Trigger agent takes action')
+            self.step(trigger_agent, current_time)
+            # calling on organization agents to take action
+            print(f'Calling cordinator agent')
+            cordinator = self.agent_manager.create_cordinator()
+            # cordinator hands off the process to the organization agents
+            print(f'Cordinator hands off the process to the organization agents')
+            process_states = self.process_manager.get_incomplete_process_state()
+            org_agents = self.agent_manager.get_org_agents()
+            cordinator_outputs = cordinator.hand_off(process_states=process_states, org_agents=org_agents)
+            for cordinator_output in cordinator_outputs:
+                # create new agent on the fly
+                process_id = cordinator_output.process_id
+                agent_id = cordinator_output.agent_id
+                agent_role = cordinator_output.agent_role
+                if agent_id:
+                    agent = self.agent_manager.get_agent_by_id(agent_id)
+                elif agent_role:
+                    agent = self.agent_manager.create_ext_agent_onfly(agent_role)
+                else:
+                    raise ValueError("Either agent_id or agent_role must be provided.")
+                # agent takes action
+                print(f'Agent {agent.id} {agent.role} takes action')
                 self.step(agent, current_time)
-            current_time += inter_arrival_time"""
 
+            
