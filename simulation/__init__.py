@@ -1,4 +1,3 @@
-from .agent import Agent
-from .simulation_engine_2 import SimulationEngine
+from .simulation_engine import SimulationEngine
 
-__all__ = ["Agent", "SimulationEngine"]
+__all__ = ["SimulationEngine"]
