@@ -26,17 +26,17 @@ class InternalDataModel(BaseModel):
     registration_number: Optional[str] = Field(default=None, description="Registration number of the car")
     incident_description: Optional[str] = Field(default=None, description="Incident description")
     damage: Optional[str] = Field(default=None, description="Damage of the car")
-    insurance_number: Optional[str] = Field(default=None, description="Insurance number of the customer")
     payment_amount: Optional[str] = Field(default=None, description="Payment amount of the repairment")
 
 class FeedbackModel(BaseModel):
-    sastifation_score: Optional[str] = Field(default=None, description="Sastifaction score when doing the task")
+    satisfaction_score: Optional[str] = Field(default=None, description="Satisfaction score when doing the task")
 
 class TrigerOutput(BaseModel):
     """Structured Trigger Output"""
     action: str = Field(description="Action taken by the agent")
     timestamp: str = Field(description="Timestamp of the action")
     data: InternalDataModel
+    feedback: Optional[FeedbackModel] = Field(default=None, description="Feedback from the agent about the action they took")
 
 class ListTrigerOutput(BaseModel):
     """Structured Trigger Output List"""
@@ -47,6 +47,7 @@ class AgentOutput(BaseModel):
     action: str = Field(description="Action taken by the agent")
     timestamp: str = Field(description="Timestamp of the action")
     data: InternalDataModel
+    feedback: Optional[FeedbackModel] = Field(default=None, description="Feedback from the agent about the action they took")
 
 class ListAgentOutput(BaseModel):
     """Structured Agent Output List"""
@@ -60,6 +61,7 @@ class Agent(BaseModel):
     actions: List[str] = Field(..., description="Agent's possible actions")
     action2data: Dict[str, List[str]] = Field(default_factory=dict, description="Mapping of actions to internal data attributes")
     prompt: str = Field(default='', description="Prompt for the agent")
+    verification_prompt: str = Field(default='', description="Verification prompt for the agent")
     trigger: bool = Field(default=False, description="Trigger agent or not")
     
     # Create a dynamic pydantic model for demographics
@@ -115,33 +117,104 @@ class Agent(BaseModel):
 
         prompt = f"""
         You are an agent participating in a business process.
-        You are involved in the following process: {{process_summary}}
-        You play the role of: {role}.
-        Your demographic profile is: {agent_demographics}.
-        You have the ability to perform the following actions: {actions}
-        Basing on the action you take, you have to output also the data related to that action.
-        Below is the dictionary showing which data is required for which action:
-        Action_data: {action2data_str}.
-        The current state of the process is: {{process_state}}.
-        The current timestamp is: {{current_time}}.
-        The process may be influenced by the following external factors: {{external_factors}}
-        The current external conditions are: {{external_values}}.
-        Based on the above information, determine whether to take an action. If you choose to act, specify the action and record the timestamp.
 
-        Please respond using the following structured format:
-        - process_id: ```<process_id>```
-        - action: ```<your_chosen_action>```
-        - timestamp: ```<timestamp_of_action>```
-        - data: ```<data_related_to_action>```
+        Process Summary: {{process_summary}}  
+        Your Role: {role}  
+        Demographic Profile: {agent_demographics}  
+        Available Actions: {actions}  
 
+        Each action may require specific data. Below is a mapping of actions to their required data fields:  
+        Action Data Mapping: {action2data_str} 
 
-        If you choose not to act, please leave the action field empty.
-        If there is no data related to the action, leave the data field empty.
-        If there is data related to the action, please provide the data values in the following format:
-        - data: ```<data_attribute_1>: <data_value_1>, <data_attribute_2>: <data_value_2>, ...```
+        You are given the following information
 
-        You may take multiple actions. If so, repeat the format above for each action taken."""
+        Current Process State: {{process_state}}  
+        Current Timestamp: {{current_time}}  
+        Relevant External Factors: {{external_factors}}  
+        Current External Conditions: {{external_values}}  
+
+        Based on the above information, decide whether to take one or more actions within the next hour.  
+        If you choose to act, specify the process_id, the action(s), the timestamp(s), and include your feedback (a satisfaction score from 1 to 5). The timestamp(s) must be within one hour of the current time.
+
+        **Please use the following structured format for each action taken:**
+
+        - process_id: ```<process_id>```  
+        - action: ```<your_chosen_action>```  
+        - timestamp: ```<timestamp_of_action>```  
+        - data: ```<data_attribute_1>: <data_value_1>, <data_attribute_2>: <data_value_2>, ...```  
+        - feedback: ```<satisfaction_score from 1 to 5>```  
+
+        **If you choose not to act:**
+        - Leave the `action` field and other fields empty.
+
+        **If an action does not require any data:**
+        - Leave the `data` field empty.
+
+        **If you take multiple actions:**
+        - Repeat the above structured format for each action.
+
+        Sometimes it makes sense not to take any action at all, so you can leave all fields empty.
+        """
+
         self.prompt = prompt
+    
+    def create_verification_prompt(self, llm = llm_high):
+        """Create verification prompt for the agent"""
+        role = self.role
+        actions = ', '.join(self.actions)
+        # get demographics values of the agent
+        agent_demographics = self._generate_demographics(llm=llm)
+        agent_demographics = ' '.join([f"{key}: {value}" for key, value in agent_demographics.model_dump().items()])
+        # convert action2data to string
+        action2data_str = ', '.join(f"{action}: {', '.join(factors)}" for action, factors in self.action2data.items())
+        verification_prompt = f"""
+        You are a reflective agent reviewing your previously decided actions in a business process.
+
+        Here is a summary of the situation:
+        - Process Summary: {{process_summary}}
+        - Your Role: {role}
+        - Demographic Profile: {agent_demographics}
+        - Available Actions: {actions}
+        - Action Data Mapping: {action2data_str}
+
+        Contextual Information:
+        - Current Process State: {{process_state}}
+        - Current Timestamp: {{current_time}}
+        - Relevant External Factors: {{external_factors}}
+        - Current External Conditions: {{external_values}}
+
+        Previously Proposed Action(s):
+        {{previous_actions}}
+
+        **Your task:**
+        Carefully evaluate whether the proposed action(s) are appropriate:
+        - Timestamp Feasibility: Does the proposed action make sense at the given time? Consider typical working hours and avoid actions during expected sleep times. If the timestamp is unrealistic, do not take any action.
+        - Process State Relevance: Does the current state of the process require this action? If the action is not relevant to the current process state, do not take any action.
+        - Performance Feedback: Provide accurate feedback scores reflecting your experience with the action. If the results are unsatisfactory, ensure your feedback reflects this. It should be a score from 1 to 5, where 1 is very unsatisfactory and 5 is very satisfactory, 2 is unsatisfactory, 3 is neutral, and 4 is satisfactory.
+
+
+        **Then decide:**
+        - Keep the action(s) as is **only if they clearly make sense**.
+        - Otherwise, revise them or decide not to act at this time.
+
+        Use the same structured format to provide your final, validated decision:
+
+        - process_id: ```<process_id>```  
+        - action: ```<your_chosen_action>```  
+        - timestamp: ```<timestamp_of_action>```  
+        - data: ```<data_attribute_1>: <data_value_1>, <data_attribute_2>: <data_value_2>, ...```  
+        - feedback: ```<satisfaction_score from 1 to 5>```  
+
+        If you decide not to act after reviewing, leave the fields empty.
+
+        If you decide to keep the action(s) or change them, output them in the same structured format (with the changed values if you want to change) as above.
+
+        If you output multiple actions, repeat the above structured format for each action.
+
+        Sometimes it makes sense not to take any action at all, so you can leave all fields empty.
+        """
+        self.verification_prompt = verification_prompt
+
     
     def create_trigger_prompt(self, llm = llm_high):
 
@@ -154,31 +227,97 @@ class Agent(BaseModel):
         action2data_str = ', '.join(f"{action}: {', '.join(factors)}" for action, factors in self.action2data.items())
         prompt = f"""
         You are an agent participating in a business process.
-        You are involved in the following process: {{process_summary}}
-        You play the role of: {role}.
-        Your demographic profile is: {agent_demographics}.
-        You have the ability to perform the following actions: {actions}
-        Basing on the action you take, you have to output also the data related to that action.
-        Below is the dictionary showing which data is required for which action:
-        Action_data: {action2data_str}.
-        The current timestamp is: {{current_time}}.
-        The process may be influenced by the following external factors: {{external_factors}}
-        The current external conditions are: {{external_values}}.
-        Based on the above information, determine whether to take an action. If you choose to act, specify the action and record the timestamp.
 
-        Please respond using the following structured format:
-        - action: ```<your_chosen_action>```
-        - timestamp: ```<timestamp_of_action>```
-        - data: ```<data_related_to_action>```
+        Process Summary: {{process_summary}}  
+        Your Role: {role}  
+        Demographic Profile: {agent_demographics}  
+        Available Actions: {actions}  
 
+        Each action may require specific data. Below is a mapping of actions to their required data fields:  
+        Action Data Mapping: {action2data_str} 
 
-        If you choose not to act, please leave the action field empty.
-        If there is no data related to the action, leave the data field empty.
-        If there is data related to the action, please provide the data values in the following format:
-        - data: ```<data_attribute_1>: <data_value_1>, <data_attribute_2>: <data_value_2>, ...```
+        You are given the following information
+  
+        Current Timestamp: {{current_time}}  
+        Relevant External Factors: {{external_factors}}  
+        Current External Conditions: {{external_values}}  
 
-        You may take multiple actions. If so, repeat the format above for each action taken."""
+        Based on the above information, decide whether to take one or more actions within the next hour.  
+        If you choose to act, specify the action(s), the timestamp(s), and include your feedback (a satisfaction score from 1 to 5). The timestamp(s) must be within one hour of the current time.
+
+        **Please use the following structured format for each action taken:**
+ 
+        - action: ```<your_chosen_action>```  
+        - timestamp: ```<timestamp_of_action>```  
+        - data: ```<data_attribute_1>: <data_value_1>, <data_attribute_2>: <data_value_2>, ...```  
+        - feedback: ```<satisfaction_score from 1 to 5>```  
+
+        **If you choose not to act:**
+        - Leave the `action` field and other fields empty.
+
+        **If an action does not require any data:**
+        - Leave the `data` field empty.
+
+        **If you take multiple actions:**
+        - Repeat the above structured format for each action.
+
+        Sometimes it makes sense not to take any action at all, so you can leave all fields empty.
+        """
         self.prompt = prompt
+    
+    def create_trigger_verification_prompt(self, llm = llm_high):
+        """Create verification prompt for the trigger agent"""
+        role = self.role
+        actions = ', '.join(self.actions)
+        # get demographics values of the agent
+        agent_demographics = self._generate_demographics(llm=llm)
+        agent_demographics = ' '.join([f"{key}: {value}" for key, value in agent_demographics.model_dump().items()])
+        action2data_str = ', '.join(f"{action}: {', '.join(factors)}" for action, factors in self.action2data.items())
+        verification_prompt = f"""
+        You are a reflective agent reviewing the actions you previously proposed in a business process.
+
+        Here is a summary of the situation:
+        - Process Summary: {{process_summary}}  
+        - Your Role: {role}  
+        - Demographic Profile: {agent_demographics}  
+        - Available Actions: {actions}  
+        - Action Data Mapping: {action2data_str}  
+
+        Contextual Information:
+
+        - Current Timestamp: {{current_time}}  
+        - Relevant External Factors: {{external_factors}}  
+        - Current External Conditions: {{external_values}}  
+
+        Your Previously Proposed Action(s):
+        {{previous_actions}}
+
+        **Your task:**  
+        Carefully evaluate whether the proposed action(s) are appropriate:
+        - Timestamp Feasibility: Does the proposed action make sense at the given time? Consider typical working hours and avoid actions during expected sleep times. If the timestamp is unrealistic, do not take any action.
+        - Process State Relevance: Does the current state of the process require this action? If the action is not relevant to the current process state, do not take any action.
+        - Performance Feedback: Provide accurate feedback scores reflecting your experience with the action. If the results are unsatisfactory, ensure your feedback reflects this. It should be a score from 1 to 5, where 1 is very unsatisfactory and 5 is very satisfactory, 2 is unsatisfactory, 3 is neutral, and 4 is satisfactory.
+
+        **Your job now:**  
+        Revise the previously proposed action(s) if needed. You may:
+        - Confirm and keep them if they make sense.
+        - Adjust them to be more appropriate.
+        - Or choose not to act at this time.
+
+        Use the same structured format to provide your final, validated decision:
+
+        - action: ```<your_chosen_action>```  
+        - timestamp: ```<timestamp_of_action>```  
+        - data: ```<data_attribute_1>: <data_value_1>, <data_attribute_2>: <data_value_2>, ...```  
+        - feedback: ```<satisfaction_score from 1 to 5>```  
+
+        If, after reviewing, you decide not to act, leave the `action`, `timestamp`, `data`, and `feedback` fields empty.
+        If you decide to keep the action(s) or change them, output them in the same structured format as above.
+        If you output multiple actions, repeat the above structured format for each action.
+        Sometimes it makes sense not to take any action at all, so you can leave all fields empty.
+        """
+        self.verification_prompt = verification_prompt
+
     
     def take_trigger_action(self, process_summary:str, current_time:str, external_factors:list, external_values:dict, llm=llm_mid) -> AgentOutput:
         """Take action based on the prompt and return the output"""
@@ -209,10 +348,65 @@ class Agent(BaseModel):
             "external_values": external_values
         })
         return agent_output
-    
-    def take_action_and_handoff(self):
-        """Take action and handoff to the next agent"""
-        pass
+    def take_action_verify(self, process_summary:str, process_state:str, current_time:str, external_factors:list, external_values:dict, llm=llm_mid) -> AgentOutput:
+        actions = self.take_action(
+            process_summary=process_summary,
+            process_state=process_state,
+            current_time=current_time,
+            external_factors=external_factors,
+            external_values=external_values)
+        print(f'Agent first action: {actions}')
+        action_strings = ""
+        for action in actions.agent_outputs:
+            action_string = f'Process_id: {action.process_id}, action: {action.action}, "timestamp: {action.timestamp}, data: {', '.join([f'{key}: {value}' for key, value in action.data.model_dump().items() if value is not None])}, "feedback: {action.feedback.satisfaction_score if action.feedback else 'None'}\n'
+            action_strings += action_string
+
+        structured_llm = llm.with_structured_output(ListAgentOutput)
+        prompt = PromptTemplate.from_template(self.verification_prompt)
+        chain = prompt | structured_llm
+        #chain = prompt | llm
+        agent_output = chain.invoke({
+            "process_summary": process_summary,
+            "process_state": process_state,
+            "current_time": current_time,
+            "external_factors": external_factors,
+            "external_values": external_values,
+            "previous_actions": action_strings
+        })
+        print(f'Agent second action: {agent_output}')
+        if agent_output!=actions:
+            print(f'ACTION VERIFIED')
+        return agent_output
+        
+    def take_trigger_action_verify(self, process_summary:str, current_time:str, external_factors:list, external_values:dict, llm=llm_mid) -> AgentOutput:
+        actions = self.take_trigger_action(
+            process_summary=process_summary,
+            current_time=current_time,
+            external_factors=external_factors,
+            external_values=external_values)
+
+        print(f'Trigger agent first action: {actions}')
+        action_strings = ""
+        for action in actions.agent_outputs:
+            action_string = f'action: {action.action}, "timestamp: {action.timestamp}, data: {', '.join([f'{key}: {value}' for key, value in action.data.model_dump().items() if value is not None])}, "feedback: {action.feedback.satisfaction_score if action.feedback else 'None'}\n'
+            action_strings += action_string
+
+        structured_llm = llm.with_structured_output(ListTrigerOutput)
+        prompt = PromptTemplate.from_template(self.verification_prompt)
+        chain = prompt | structured_llm
+        #chain = prompt | llm
+        agent_output = chain.invoke({
+            "process_summary": process_summary,
+            "current_time": current_time,
+            "external_factors": external_factors,
+            "external_values": external_values,
+            "previous_actions": action_strings
+        })
+        print(f'Trigger agent second action: {agent_output}')
+        if agent_output!=actions:
+            print(f'ACTION VERIFIED')
+        return agent_output
+
 
 class CordinatorOutput(BaseModel):
     """Structured Cordinator Output"""
@@ -284,9 +478,9 @@ class AgentManager:
     def create_trigger_agent_onfly(self):
         """Create a trigger agent based on the configuration."""
         simulation_configs = self.config_manager.update_and_load_configs()
-        role_actions = simulation_configs.get('role_actions', {})
+        role_actions = simulation_configs.get('trigger_role_actions', {})
         demographics = simulation_configs.get('demographics', [])
-        trigger_agent = simulation_configs.get('trigger_agent', None)
+        trigger_agent = next(iter(role_actions)) if isinstance(role_actions, dict) else role_actions
         action2data = simulation_configs.get('action_data', {}) 
 
         if trigger_agent:
@@ -301,6 +495,7 @@ class AgentManager:
                 trigger=True
             )
             agent.create_trigger_prompt()
+            agent.create_trigger_verification_prompt()
             self.ext_agents.append(agent)
             return agent
         else:
@@ -310,7 +505,7 @@ class AgentManager:
     def create_org_agents(self):
         """Create agents based on the configuration."""
         simulation_configs = self.config_manager.update_and_load_configs()
-        role_actions = simulation_configs.get('role_actions', {})
+        role_actions = simulation_configs.get('org_role_actions', {})
         demographics = simulation_configs.get('demographics', [])
         agent_numbers = simulation_configs.get('num_org_agents', {})
         action2data = simulation_configs.get('action_data', {})
@@ -328,12 +523,13 @@ class AgentManager:
                     action2data=action2data
                 )
                 agent.create_prompt()
+                agent.create_verification_prompt()
                 self.org_agents.append(agent)
 
     def create_ext_agent_onfly(self, role:str):
         """Create agents on the fly based on the cofigurations or handoff"""
         simulation_configs = self.config_manager.update_and_load_configs()
-        role_actions = simulation_configs.get('role_actions', {})
+        role_actions = simulation_configs.get('ext_role_actions', {})
         demographics = simulation_configs.get('demographics', [])
         action2data = simulation_configs.get('action_data', {})
         
@@ -347,6 +543,7 @@ class AgentManager:
             action2data=action2data
         )
         agent.create_prompt()
+        agent.create_verification_prompt()
         self.ext_agents.append(agent)
         return agent
     

@@ -18,7 +18,7 @@ def main():
     extracted_config_file = './configs/extracted_configs.json'
     user_config_file = './configs/user_configs.json'
     simulation_config_file = './configs/configs.json'
-    log_file = './logs/insurance_claim_process_05.csv'
+    log_file = './logs/insurance_claim_process_06_new_new_new_new_2.csv'
 
     simulation_engine = SimulationEngine(
         bpmn_path=bpmn_file,
@@ -27,9 +27,9 @@ def main():
         simulation_config_path=simulation_config_file,
         log_path=log_file
     )
-    start_time = '2023-10-01T00:00:00+00:00'
-    end_time = '2023-10-02T00:00:00+00:00'
-    inter_arrival_time = 360  # in seconds
+    start_time = '2025-05-01T00:00:00+00:00'
+    end_time = '2025-05-03T00:00:00+00:00'
+    inter_arrival_time = 3600*2  # in seconds
     simulation_engine.run(start_time, end_time, inter_arrival_time)
 
 

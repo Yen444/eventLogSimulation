@@ -1,7 +1,7 @@
 from pydantic import BaseModel, Field, create_model
 from langchain_core.prompts import PromptTemplate
 
-from .agent_manager import Agent, AgentManager
+from .agent_manager_3 import Agent, AgentManager
 from .config_manager import ConfigManager
 from .process_manager import ProcessManager, logEvent
 
@@ -97,59 +97,75 @@ class SimulationEngine:
         self.process_manager = ProcessManager(log_path)
         self.external_factors_manager = ExternalFactorsManager(self.config_manager)
 
-    def step(self, agent: Agent, current_time):
+    def step(self, agent: Agent, current_time, process_id=None):
         """Run a single step of the simulation."""
 
         process_summary = self.config_manager.configs.get('process_summary', '')
-        process_state = self.process_manager.get_incomplete_process_state()
+        #process_state = self.process_manager.get_incomplete_process_state()
+        process_state = self.process_manager.get_related_process(process_id=process_id)
         external_factors = self.config_manager.configs.get('external_factors', [])
         external_factors = ', '.join(external_factors)
         external_values = self.external_factors_manager.generate_external_values(current_time)
+        # Make sure Agent is not None
+        if agent is not None:
+            # agent takes action
+            if agent.trigger:
+                print(f'taking trigger action')
+                """out = agent.take_trigger_action(
+                    process_summary=process_summary,
+                    current_time=current_time,
+                    external_factors=external_factors,
+                    external_values=external_values
+                )"""
+                out = agent.take_trigger_action_verify(
+                    process_summary=process_summary,
+                    current_time=current_time,
+                    external_factors=external_factors,
+                    external_values=external_values
+                )
+                if out:
+                    for agent_output in out.agent_outputs:
+                        if agent_output.action != None:
+                            log_event = logEvent(
+                                process_id=self.process_manager.generate_process_id(),
+                                action=agent_output.action,
+                                timestamp=agent_output.timestamp,
+                                external_values=external_values,
+                                internal_values=json.dumps({atr:getattr(agent_output.data, atr) for atr in agent_output.data.model_fields.keys()}),
+                                feedback = json.dumps({atr: getattr(agent_output.feedback, atr) for atr in agent_output.feedback.model_fields.keys()}) if agent_output.feedback is not None else None,
+                                agent=agent
+                            )
+                            self.process_manager.update_process(log_event=log_event, last_activities=self.config_manager.configs.get('start_end_events', {}).get('last_activities', []))
 
-        # agent takes action
-        if agent.trigger:
-            print(f'taking trigger action')
-            out = agent.take_trigger_action(
-                process_summary=process_summary,
-                current_time=current_time,
-                external_factors=external_factors,
-                external_values=external_values
-            )
-            print(f'out: {out}')
-            for agent_output in out.agent_outputs:
-                if agent_output.action != None:
-                    log_event = logEvent(
-                        process_id=self.process_manager.generate_process_id(),
-                        action=agent_output.action,
-                        timestamp=agent_output.timestamp,
-                        external_values=external_values,
-                        internal_values=json.dumps({atr:getattr(agent_output.data, atr) for atr in agent_output.data.model_fields.keys()}),
-                        #feedback=agent_output.feedback,
-                        agent=agent
-                    )
-                    self.process_manager.update_process(log_event=log_event, last_activities=self.config_manager.configs.get('start_end_events', {}).get('last_activities', []))
-
-        else:
-            out = agent.take_action(
-                process_summary=process_summary,
-                process_state=process_state,
-                current_time=current_time,
-                external_factors=external_factors,
-                external_values=external_values
-            )
-            for agent_output in out.agent_outputs:
-                if agent_output.action != None:
-                    log_event = logEvent(
-                        process_id= agent_output.process_id,
-                        action=agent_output.action,
-                        timestamp=agent_output.timestamp,
-                        external_values=external_values,
-                        internal_values=json.dumps({atr:getattr(agent_output.data, atr) for atr in agent_output.data.model_fields.keys()}),
-                        #feedback=agent_output.feedback,
-                        agent=agent
-                    )
-                    self.process_manager.update_process(log_event=log_event, last_activities=self.config_manager.configs.get('start_end_events', {}).get('last_activities', []))
-        
+            else:
+                """out = agent.take_action(
+                    process_summary=process_summary,
+                    process_state=process_state,
+                    current_time=current_time,
+                    external_factors=external_factors,
+                    external_values=external_values
+                )"""
+                out = agent.take_action_verify(
+                    process_summary=process_summary,
+                    process_state=process_state,
+                    current_time=current_time,
+                    external_factors=external_factors,
+                    external_values=external_values
+                )
+                if out:
+                    for agent_output in out.agent_outputs:
+                        if agent_output.action != None:
+                            log_event = logEvent(
+                                process_id= agent_output.process_id,
+                                action=agent_output.action,
+                                timestamp=agent_output.timestamp,
+                                external_values=external_values,
+                                internal_values=json.dumps({atr:getattr(agent_output.data, atr) for atr in agent_output.data.model_fields.keys()}),
+                                feedback = json.dumps({atr: getattr(agent_output.feedback, atr) for atr in agent_output.feedback.model_fields.keys()}) if agent_output.feedback is not None else None,
+                                agent=agent
+                            )
+                            self.process_manager.update_process(log_event=log_event, last_activities=self.config_manager.configs.get('start_end_events', {}).get('last_activities', []))
+            
     def run(self, start_time, end_time, inter_arrival_time):
         """Run the simulation."""
         print(f'creating cordinator agent')
@@ -174,26 +190,30 @@ class SimulationEngine:
             self.step(trigger_agent, current_time)
 
             # cordinator agent takes action
-            print(f'Cordinator hands off the process to the organization agents')
-            process_states = self.process_manager.get_incomplete_process_state()
-            org_agents = self.agent_manager.org_agents
-            external_agents = self.agent_manager.ext_agents
-            cordinator_outputs = self.agent_manager.cordinator.hand_off(process_states=process_states, org_agents=org_agents, external_agents=external_agents)
-            print(f'Cordinator outputs: {cordinator_outputs}')
+            update_current_time = current_time
+            
+            for i in range(2):
+                print(f'Cordinator hands off the process to the organization agents')
+                process_states = self.process_manager.get_incomplete_process_state()
+                org_agents = self.agent_manager.org_agents
+                external_agents = self.agent_manager.ext_agents
+                cordinator_outputs = self.agent_manager.cordinator.hand_off(process_states=process_states, org_agents=org_agents, external_agents=external_agents)
 
-            for cordinator_output in cordinator_outputs.cordinator_outputs:
-                print(type(cordinator_output))
-                process_id = cordinator_output.process_id
-                agent_id = cordinator_output.agent_id
-                agent_role = cordinator_output.agent_role
-                if agent_id:
-                    agent = self.agent_manager.get_agent_by_id(agent_id)
-                elif agent_role:
-                    agent = self.agent_manager.create_ext_agent_onfly(agent_role)
-                else:
-                    raise ValueError("Either agent_id or agent_role must be provided.")
-                # agent takes action
-                print(f'Agent {agent.id} {agent.role} takes action')
-                self.step(agent, current_time)
+                for cordinator_output in cordinator_outputs.cordinator_outputs:
+                    process_id = cordinator_output.process_id
+                    agent_id = cordinator_output.agent_id
+                    agent_role = cordinator_output.agent_role
+                    if agent_id:
+                        agent = self.agent_manager.get_agent_by_id(agent_id)
+                    elif agent_role:
+                        agent = self.agent_manager.create_ext_agent_onfly(agent_role)
+                    else:
+                        raise ValueError("Either agent_id or agent_role must be provided.")
+                    # agent takes action
+                    #print(f'Agent {agent.id} {agent.role} takes action')
+                    self.step(agent, update_current_time, process_id=process_id)
+                    update_current_time += (inter_arrival_time/2)
+            
+            current_time += inter_arrival_time
 
             

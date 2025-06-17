@@ -1,7 +1,7 @@
 from pydantic import BaseModel, Field
 from typing import List, Dict, Any, Optional
 
-from .agent_manager import Agent
+from .agent_manager_3 import Agent
 from .utils import generate_process_id
 
 
@@ -17,7 +17,7 @@ class logEvent(BaseModel):
     agent: Agent = Field(description="Agent who performed the action")
     # external factor / action related attributes
     external_values: Optional[str] = Field(default=None, description="External factors which can affect the agent's action and the whole process") 
-    # internal factor/ trace related attributes
+    # internal factor/ process related attributes
     internal_values: Optional[str] = Field(default=None, description="Internal factors which can affect the agent's action and the whole process")
     # experience-related data / action related attributes
     feedback: Optional[str] = Field(default=None, description="Feedback from the agent about the action they took (easy, hard, sastisfied, unsatisfied, etc.)")
@@ -26,6 +26,7 @@ class ProcessInstance(BaseModel):
     """Process instance for the simulation"""
     process_id: str = Field(description="Unique identifier for the process instance")
     events: List[logEvent] = Field(default_factory=list, description="List of events in the process instance")
+    data: dict = Field(default_factory=dict, description="Data related to the process instance")
 
 class ProcessManager:
     def __init__(self, log_path):
@@ -58,7 +59,14 @@ class ProcessManager:
                 "data_values": json.dumps(log_event.internal_values),
                 "feedback": json.dumps(log_event.feedback)
             })
-    
+    def _update_process_data(self, log_event:logEvent, process_instance: ProcessInstance):
+        """Update the process data for a given process ID."""
+        internal_data = json.loads(log_event.internal_values) if log_event.internal_values else {}
+        for key, value in internal_data.items():
+            if key not in process_instance.data:
+                process_instance.data[key] = value
+        return process_instance
+
     # generating process id if trigger event happens
 
     def generate_process_id(self):
@@ -67,22 +75,23 @@ class ProcessManager:
         process_id = generate_process_id(used_ids=used_process_ids)
         return process_id
     
-    def get_related_process(self, process_ids: List) -> str:
+    def get_related_process(self, process_id: str) -> str:
         """Get the related process instance."""
-        process_states = ""
-        for process_id in process_ids:
-            for process_instance in self.incomplete_processes:
-                if process_instance.process_id == process_id:
-                    process_state = f'Process ID: {process_instance.process_id}, Last Event: {process_instance.events[-1].action if process_instance.events else 'No action is taken so far'}, Last Timestamp: {process_instance.events[-1].timestamp if process_instance.events else 'None'}, Process Data: \n'
-                    break
-            process_states += process_state
-    
+        for process_instance in self.incomplete_processes:
+            if process_instance.process_id == process_id:
+                first_event = process_instance.events[0] if process_instance.events else None
+                last_event = process_instance.events[-1] if process_instance.events else None
+                process_state = f'Process ID: {process_instance.process_id}, First Action:: {first_event.action if first_event else 'No action is taken so far'} finished at {first_event.timestamp if first_event else ''}, Last Action: {last_event.action if last_event else 'No action is taken so far'} finished at {last_event.timestamp if last_event else ''}, Process Data: {process_instance.data}\n'
+                return process_state
+        return f'No process instance found with ID: {process_id}'
+
     def get_incomplete_process_state(self) ->str:
         """Get the current state of incomplete processes."""
         process_states = ""
         for process_instance in self.incomplete_processes:
+            first_event = process_instance.events[0] if process_instance.events else None
             last_event = process_instance.events[-1] if process_instance.events else None
-            process_state = f'Process ID: {process_instance.process_id}, Last Event: {last_event.action if last_event else 'No action is taken so far'}, Last Timestamp: {last_event.timestamp if last_event else 'None'}\n'
+            process_state = f'Process ID: {process_instance.process_id}, First Action:: {first_event.action if first_event else 'No action is taken so far'} finished at {first_event.timestamp if first_event else ''}, Last Action: {last_event.action if last_event else 'No action is taken so far'} finished at {last_event.timestamp if last_event else ''}, Process Data: {process_instance.data}\n'
             process_states += process_state
         return process_states
     
@@ -92,6 +101,7 @@ class ProcessManager:
         self.log_events.append(log_event)
         # write log event to the log file
         self._write_to_log_file(log_event)
+
 
         # update process instances
         if log_event.action in last_activities:
@@ -107,6 +117,7 @@ class ProcessManager:
             # check if the process instance is already in the incomplete processes
             if log_event.process_id not in [process_instance.process_id for process_instance in self.incomplete_processes]:
                 process_instance = ProcessInstance(process_id=process_id)
+                process_instance = self._update_process_data(log_event, process_instance)
                 # add the log event to the process instance
                 process_instance.events.append(log_event)
                 self.incomplete_processes.append(process_instance)
@@ -115,6 +126,7 @@ class ProcessManager:
                 # and update the process instance
                 for process_instance in self.incomplete_processes:
                     if process_instance.process_id == process_id:
+                        process_instance = self._update_process_data(log_event, process_instance)
                         # add the log event to the process instance
                         process_instance.events.append(log_event)
                         break

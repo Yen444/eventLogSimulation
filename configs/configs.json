@@ -8,37 +8,48 @@
         "temperature",
         "traffic"
     ],
-    "process_summary": "The car insurance claim process begins with the customer submitting claim documentation. The notification department checks the documentation and registers the claim. The handling department then checks the insurance and performs an assessment. If the claim is rejected, the customer is notified. If the claim is approved, a repair is arranged with a garage, and payment is scheduled. Finally, the customer is notified of the claim resolution. The Garage receives damage information and payment details during the repair and payment scheduling. ",
+    "process_summary": "The car insurance claim process begins with the customer submitting claim. The Notification Department checks the documents and registers the claim. The Handling Department then check the insurance and assesses the claim. The Handling Department can reject the claim. If the claim is rejected, the customer is notified. If the claim is approved, the Handling Department arranges repair with a garage. The garage repairs the vehicle; the Handling Department arranges the payment. Finally, the customer is informed of the claim resolution.",
     "org_agents": [
         "Notification department",
         "Handling department"
     ],
     "num_org_agents": {
         "Notification department": 2,
-        "Handling department": 2
+        "Handling department": 4
     },
     "ext_agents": [
         "Customer",
         "Garage"
     ],
-    "trigger_agent": "Customer",
-    "role_actions": {
+    "trigger_role_actions": {
+        "Customer": [
+            "submit claim"
+        ]
+    },
+    "org_role_actions": {
         "Notification department": [
             "Check documentation",
             "Register claim"
         ],
         "Handling department": [
             "Check insurance",
-            "Perform assessmet",
+            "Perform assessment",
             "Reject claim",
             "Arrange repair",
             "Schedule payment",
             "Notify customer"
-        ],
-        "Customer": ["Submit claim"],
-        "Garage": ["repair vehicle", "receive payment"]
+        ]
     },
-    "internal_factors": [
+    "ext_role_actions": {
+        "Customer": [
+            "submit claim"
+        ],
+        "Garage": [
+            "repair vehicle",
+            "receive payment" 
+        ]
+    },
+    "data": [
         "vehicle",
         "registration_number",
         "incident description",
@@ -46,7 +57,7 @@
         "insurance_number",
         "payment_amount"
     ],
-    "action_internal_factors": {
+    "action_data": {
         "submit claim": [
             "vehicle",
             "registration_number",
