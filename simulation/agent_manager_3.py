@@ -32,11 +32,12 @@ class VerifyOutput(BaseModel):
     appropriate: bool = Field(description="Whether the action is appropriate or not")
 
 class InternalDataModel(BaseModel):
-    vehicle: Optional[str] = Field(default=None, description="Car model name")
-    registration_number: Optional[str] = Field(default=None, description="Registration number of the car")
-    incident_description: Optional[str] = Field(default=None, description="Incident description")
-    damage: Optional[str] = Field(default=None, description="Damage of the car")
-    payment_amount: Optional[str] = Field(default=None, description="Payment amount of the repairment")
+    spend_area: Optional[str] = Field(default=None, description="A high-level category that classifies overall organizational spending, such as IT, logistics, or production.")
+    sub_spend_area: Optional[str] = Field(default=None, description="A more specific classification within a spend area, detailing the exact type of goods or services procured")
+    net_worth: Optional[str] = Field(default=None, description="The value of the item in Euro")
+    changed_net_worth: Optional[str] = Field(default=None, description="The changed value of the item in Euro if the price is changed.")
+    vendor: Optional[str] = Field(default=None, description="The external supplier providing goods or services for a purchase order")
+
 
 class FeedbackModel(BaseModel):
     task_difficulty: Optional[float] = Field(default=None, description="Difficulty of the task")

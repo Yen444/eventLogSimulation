@@ -18,7 +18,13 @@ def main():
     extracted_config_file = './configs/extracted_configs.json'
     user_config_file = './configs/user_configs.json'
     simulation_config_file = './configs/configs.json'
-    log_file = './logs/insurance_claim_process_06_new_new_new_new_2.csv'
+    log_file = './logs/insurance_claim_process_06.csv'
+
+    """bpmn_file = './bpmn_files/Data_set/p2pMatchingEC.bpmn'
+    extracted_config_file = './configs/p2p3MatchingEC_extracted_configs.json'
+    user_config_file = './configs/p2p3MatchingEC_user_configs.json'
+    simulation_config_file = './configs/configs_p2p_process.json'
+    log_file = './logs/p2p_process_3WayMatchingEC.csv'"""
 
     simulation_engine = SimulationEngine(
         bpmn_path=bpmn_file,
@@ -27,9 +33,10 @@ def main():
         simulation_config_path=simulation_config_file,
         log_path=log_file
     )
-    start_time = '2025-05-01T00:00:00+00:00'
-    end_time = '2025-05-03T00:00:00+00:00'
-    inter_arrival_time = 3600*2  # in seconds
+    start_time = '2018-01-01T00:00:00+00:00'
+    end_time = '2019-01-01T00:00:00+00:00'
+    #inter_arrival_time = 3600  # in seconds
+    inter_arrival_time = 3600 * 18
     simulation_engine.run(start_time, end_time, inter_arrival_time)
 
 
