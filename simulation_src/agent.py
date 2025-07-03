@@ -1,0 +1,293 @@
+from pydantic import BaseModel, Field, create_model
+from typing import List, Dict, Optional, Any, Type
+from langchain_core.prompts import PromptTemplate
+
+
+from .llm_utils import generate_random_text_with_mem_chatbot
+from .utils import generate_agent_id
+from .config_manager import ConfigManager
+
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
+
+api_key = os.getenv('GOOGLE_API_KEY')
+api_key_openai = os.getenv('OPENAI_API_KEY')
+
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_openai import ChatOpenAI
+
+llm_low = ChatGoogleGenerativeAI(model='gemini-2.0-flash', temperature=0.0) # gemini-2.5-pro-preview-03-25
+llm_mid = ChatGoogleGenerativeAI(model='gemini-2.0-flash', temperature=0.5)
+llm_high = ChatGoogleGenerativeAI(model='gemini-2.0-flash', temperature=1.0)
+
+llm_openai = ChatOpenAI(
+    model="gpt-4o",
+    temperature=0.5,
+    openai_api_key=api_key_openai
+)
+
+class VerifyAction(BaseModel):
+    appropriate: bool = Field(description="Whether the action is appropriate or not")
+
+class Agent(BaseModel):
+    """Base class for all agents"""
+    id: str = Field(description="Unique identifier for the agent")
+    role: str = Field(description="Role of the agent")
+    data: Optional[str] = Field(default=None, description="Data related to the agent")
+    actions: List[str] = Field(default_factory=list, description="List of actions the agent can perform")
+
+    def generate_data(self, data_model: BaseModel, llm, reflect=True):
+        data_attributes = data_model.model_fields.keys()
+        # create string from list of data attributes
+        data_attributes = ', '.join(data_attributes)
+        # add random text to the prompt
+        random_text = generate_random_text_with_mem_chatbot()
+        # create prompt for data
+        sys_prompt = """
+        Given a person with the role of a {role}, randomly generate data of that person. \
+        The data should include the following attributes: {data_attributes}.
+        {random_text}
+        Return the output in a structured format, listing each attribute and its corresponding value:
+        - <attribute>: <value>
+        - <attribute>: <value>
+        - ...
+        """
+        prompt = PromptTemplate.from_template(sys_prompt)
+        structured_llm = llm_openai.with_structured_output(data_model)
+        chain = prompt | structured_llm
+        data = chain.invoke({"role": self.role, "data_attributes": data_attributes, "random_text": random_text})
+        data =  ", ".join(f"{k}: {v}" for k, v in data.model_dump().items())
+        if not reflect:
+            # write to data values
+            self.data = data
+            return
+
+        sys_prompt_reflect= """
+        You are given a person with the role of a {role} who participates in a business process.
+
+        We have some initial data for this person that is overly generic and unrealistic. Your task is to review this initial data and regenerate any attribute values that are generic, unrealistic, or common placeholders.
+
+        Specifically:
+        - **AVOID GENERIC PLACEHOLDERS:** Do not use names like "John Doe," "Jane Doe," "A. N. Other," "Test User," or similar default values.
+        - **AIM FOR REALISM & DIVERSITY:** Generate names and other details that sound like real people, potentially reflecting a diverse range of cultural backgrounds. Make the data specific and believable for the given role.
+
+        The data should include the following attributes: {data_attributes}.
+
+        Here is the initial generic data you need to review and fix:
+        {data}
+
+        You may keep attribute-value pairs that are already realistic and specific.
+
+        Return the output in a structured format, listing each attribute and its corresponding value as follows:
+        - <attribute>: <value>
+        - <attribute>: <value>
+        - ...
+        """
+
+        prompt_reflect = PromptTemplate.from_template(sys_prompt_reflect)
+        chain_reflect = prompt_reflect | structured_llm
+        data_reflect = chain_reflect.invoke({"role": self.role, "data_attributes": data_attributes, "data": data})
+    
+        data_reflect = ", ".join(f"{k}: {v}" for k, v in data_reflect.model_dump().items())
+        if not reflect:
+            # write to data values
+            self.data = data_reflect
+        
+        print(f'First generated data: {data}')
+        print(f'Regenerated data: {data_reflect}')
+
+    
+    def _create_action_prompt(self):
+        """Create prompt for the agent"""
+        role = self.role
+        actions = ', '.join(self.actions)
+        data = self.data if self.data else "No data available"
+        prompt = f"""
+        You are an agent participating in a business process.
+
+        Process Summary: {{process_summary}}  
+        Your Role: {role}  
+        Your Profile: {data}  
+        Available Actions: {actions}  
+
+        Each action may require specific data. Below is a mapping of actions to their required data fields:  
+        Action Data Mapping: {{action_data_mapping}} 
+
+        You are assigned to the following current process instance with the message from the coordinator:
+        Current Process State: {{process_state}}
+        Message: {{message}}
+
+        You are given the following information:
+        Current Timestamp: {{current_time}}    
+
+        Based on the above information, decide whether you will finish any action for the assigned process within the next hour.  
+        If you will finished the action, specify the process_id, the action(s), the timestamp(s) at which you finished your action, and include necessary event and case data attributes.
+        
+        Event Data Attributes: {{event_data_attributes}}
+        Case Data Attributes: {{case_data_attributes}}
+
+        You must ensure that the timestamp of each action is within {{update_interval}} hour from the current time.
+        You must output all values for the event data attributes.
+        For case data attributes, only output the values that your action requires, if any. 
+
+        **Please use the following structured format for each action taken:**
+
+        - process_id: ```<process_id>```  
+        - action: ```<your_chosen_action>```  
+        - timestamp: ```<timestamp_of_action>```  
+        - case_data: ```<case_data_attribute_1>: <case_data_value_1>, <case_data_attribute_2>: <case_data_value_2>, ...```  
+        - event_data: ```<event_data_attribute_1>: <event_data_value_1>, <event_data_attribute_2>: <event_data_value_2>, ...```
+        - message: ```<your_message>```
+
+        **If you think you can't finish any action in the next {{update_interval}} hour:**
+        - Leave the `action` field and other fields empty.
+
+        **Message should be a short description of what you did, your decision, or any other relevant information.**
+
+        **Only output the data needed for the action you will take, which is specified in the action data mapping above, leave other attributes empty if it is not required for that action**
+
+        **Output a suitable timestamp for the action you will finish. The timestamp must satisfy all of the following conditions:**
+        - It must be within one hour from the current time.
+        - It must not be earlier than the current time.
+        - It must not be earlier than the timestamp of the ``SUBMIT CLAIM`` action. Because this action is the first action in the process and it must be finished before any other action.
+
+        **If the current process state is empty, which means you're the first one to take action to initialize the process"
+        - Leave the process_id and output the other fields like described.
+
+        **If the current process state is not empty, which means there is already a process_id**
+        - Output the correct process_id like the one given to you and output the other fields like described.
+
+        **If you finish multiple actions:**
+        - Repeat the above structured format for each action.
+
+        **You can take consecutive actions, but you must ensure that the timestamp of each action is within {{update_interval}} hour from the current time.**
+        """
+
+        return prompt
+    
+    def _take_action(self, output_model, llm, process_summary: str, process_state: str, action_data_mapping: Dict[str, List[str]], current_time: str, event_data_attributes: List[str], case_data_attributes: List[str], update_interval:str, message: str):
+        """
+        Act based on the process summary, process state, action data mapping, current time, event data attributes, and case data attributes.
+
+        Args:
+            process_summary (str): Summary of the process.
+            process_state (str): Current state of the process.
+            action_data_mapping (Dict[str, List[str]]): Mapping of actions to their required data fields.
+            current_time (str): Current timestamp.
+            event_data_attributes (List[str]): List of event data attributes.
+            case_data_attributes (List[str]): List of case data attributes.
+            update_interval (str): Update interval in hours.
+
+        Returns:
+            AgentOutput: Structured output containing the action taken by the agent.
+        """
+        prompt = self._create_action_prompt()
+        structured_llm = llm.with_structured_output(output_model)
+        prompt = PromptTemplate.from_template(prompt)
+        chain = prompt | structured_llm
+        agent_outputs = chain.invoke({
+            "process_summary": process_summary,
+            "process_state": process_state,
+            "action_data_mapping": ', '.join([f"{action}: {', '.join(fields)}" for action, fields in action_data_mapping.items()]),
+            "current_time": current_time,
+            "event_data_attributes": ', '.join(event_data_attributes),
+            "case_data_attributes": ', '.join(case_data_attributes),
+            "update_interval": update_interval,
+            "message": message
+        })
+        
+        return agent_outputs
+    
+    def _create_verify_prompt(self):
+        """Create verification prompt for the agent"""
+        role = self.role
+        actions = ', '.join(self.actions)
+        data = self.data if self.data else "No data available"
+        verify_prompt = f"""
+        You are a reflective agent reviewing your previously decided actions in a business process.
+
+        Here is a summary of the situation:
+        - Process Summary: {{process_summary}}
+        - Your Role: {role}
+        - Your Profile: {data}
+        - Available Actions: {actions}
+
+        Contextual Information:
+        - Current Timestamp: {{current_time}}
+        - Current Process State: {{process_state}}
+
+        You did plan to finish the following action:
+        {{previous_action}}
+
+        **Your Task:**
+        Evaluate the *appropriateness* of the previously proposed action based *primarily* on the timestamp associated with that action. For the action, assess the following:
+
+        1. **Is the timestamp appropriate:**  
+        - Does the timestamp fall within a typical and reasonable time window for work-related activities?  
+        - Avoid suggesting actions during biologically or culturally inappropriate times, such as deep night hours (e.g., 22:00-06:00), unless explicitly justified by the context.
+
+        2. **Personal Feasibility:**  
+        - Are you, given your role and demographic profile, realistically able to complete the action at the specified timestamp?  
+        - Consider your energy levels, time availability, and workload distribution. If the timestamp is likely to hinder your ability to complete the action effectively, mark it as inappropriate.
+
+        **For each action, determine whether its timestamp is both appropriate and personally feasible:**
+
+        - If the action meets both criteria, output True.
+
+        - If it fails either criterion, output False.
+
+        **Output format:**
+        - appropriate: ```<True or False>```
+
+        """
+        return verify_prompt
+
+    def act(self, output_model, llm, process_summary: str, process_state: str, action_data_mapping: Dict[str, List[str]], current_time: str, event_data_attributes: List[str], case_data_attributes: List[str], message:str, update_interval: str = "1", reflect=True):
+            
+        actions = self._take_action(
+            llm=llm,
+            process_summary=process_summary,
+            process_state=process_state,
+            action_data_mapping=action_data_mapping,
+            current_time=current_time,
+            event_data_attributes=event_data_attributes,
+            case_data_attributes=case_data_attributes,
+            update_interval=update_interval,
+            message=message,
+            output_model=output_model
+        )
+        if not reflect:
+            return actions
+        verify_prompt = self._create_verify_prompt()
+        structured_llm = llm.with_structured_output(VerifyAction)
+        prompt = PromptTemplate.from_template(verify_prompt)
+        chain = prompt | structured_llm
+        to_remove = []
+
+        for action in actions.agent_outputs:
+            action_string = (
+                f'Process_id: {action.process_id}, '
+                f'action: {action.action}, '
+                f'timestamp: {action.timestamp}, '
+                f'case_data: {", ".join([f"{key}: {value}" for key, value in (action.case_data.model_dump().items() if action.case_data else []) if value is not None])}, '
+                f'event_data: {", ".join([f"{key}: {value}" for key, value in (action.event_data.model_dump().items() if action.event_data else []) if value is not None])}\n'
+            )
+            verified_agent_output = chain.invoke({
+                "process_summary": process_summary,
+                "process_state": process_state,
+                "current_time": current_time,
+                "previous_action": action_string
+            })
+            if verified_agent_output.appropriate == False:
+                # remove action from the first actions
+                print(f'ACTION IS REMOVED')
+                to_remove.append(action)
+
+        actions.agent_outputs = [action for action in actions.agent_outputs if action not in to_remove]
+        return actions
+
+
+    
+

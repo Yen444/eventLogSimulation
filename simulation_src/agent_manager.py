@@ -1,0 +1,123 @@
+from pydantic import BaseModel, Field, create_model
+from typing import List, Dict, Optional, Any
+from langchain_core.prompts import PromptTemplate
+
+
+from .llm_utils import generate_random_text_with_mem_chatbot
+from .utils import generate_agent_id
+from .config_manager import ConfigManager
+from .agent import Agent
+from .coordinator_agent import Coordinator
+
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
+
+api_key = os.getenv('GOOGLE_API_KEY')
+api_key_openai = os.getenv('OPENAI_API_KEY')
+
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_openai import ChatOpenAI
+
+llm_low = ChatGoogleGenerativeAI(model='gemini-2.0-flash', temperature=0.0) # gemini-2.5-pro-preview-03-25
+llm_mid = ChatGoogleGenerativeAI(model='gemini-2.0-flash', temperature=0.5)
+llm_high = ChatGoogleGenerativeAI(model='gemini-2.0-flash', temperature=1.0)
+llm_openai = ChatOpenAI(
+    model="gpt-4o",
+    temperature=0.5,
+    openai_api_key=api_key_openai
+)
+
+from .utils import create_dynamic_model
+
+class AgentManager:
+    def __init__(self, config_manager: ConfigManager, llm):
+        self.config_manager = config_manager
+        self.org_agents: List[Agent] = []
+        self.ext_agents: List[Agent] = []
+        self.coordinator: Coordinator = None
+        self.llm = llm
+        self._create_dynamic_models()
+
+    def _create_dynamic_models(self):
+        configs = self.config_manager.configs
+        self.ResourceData  = create_dynamic_model("ResourceData", configs.get('agent_data', {}))
+        self.EventData = create_dynamic_model("EventData", configs.get('event_attributes', {}))
+        self.CaseData = create_dynamic_model("CaseData", configs.get('case_attributes', {}))
+        self.AgentOutput, self.ListAgentOutput = self._create_output_model(self.EventData, self.CaseData)
+
+    def _create_output_model(self, event_data_model, case_data_model):
+        # Create the dynamic single agent output model
+        AgentOutput = create_model(
+            'AgentOutput',
+            process_id=(str, ...),
+            action=(str, ...),
+            timestamp=(str, ...),
+            message=(str, ...),
+            event_data=(Optional[event_data_model], None),
+            case_data=(Optional[case_data_model], None),
+            __base__=BaseModel,
+        )
+        
+        # Create the list model wrapping multiple agent outputs
+        ListAgentOutput = create_model(
+            'ListAgentOutput',
+            agent_outputs=(List[AgentOutput], ...),
+            __base__=BaseModel,
+        )
+        
+        return AgentOutput, ListAgentOutput
+
+
+    def create_org_agents(self):
+        """Create agents based on the configuration."""
+        simulation_configs = self.config_manager.configs
+        role_actions = simulation_configs.get('org_role_action', {})
+        agent_numbers = simulation_configs.get('org_role_num', {})
+
+        for agent_role, actions in role_actions.items():
+            num_agents = agent_numbers.get(agent_role, 1)
+            for _ in range(num_agents):
+                used_ids = [agent.id for agent in self.org_agents] + [agent.id for agent in self.ext_agents]
+                agent_id = generate_agent_id(used_ids=used_ids)
+                agent = Agent(
+                    id=agent_id,
+                    role=agent_role,
+                    actions=actions
+                )
+                agent.generate_data(self.ResourceData, llm=self.llm)
+                self.org_agents.append(agent)
+
+    def create_ext_agent_onfly(self, role:str):
+        """Create agents on the fly based on the configurations or handoff"""
+        simulation_configs = self.config_manager.configs
+        role_actions = simulation_configs.get('ext_role_actions', {})
+        
+        used_ids = [agent.id for agent in self.org_agents] + [agent.id for agent in self.ext_agents]
+        agent_id = generate_agent_id(used_ids=used_ids)
+        actions = role_actions.get(role, [])
+        agent = Agent(
+            id=agent_id,
+            role=role,
+            actions=actions
+        )
+        agent.generate_data(self.ResourceData, llm=self.llm)
+        self.ext_agents.append(agent)
+        return agent
+    
+    def create_coordinator_agent(self):
+        """Create a coordinator agent"""
+        simulation_configs = self.config_manager.configs
+        process_summary = simulation_configs.get('process_summary', '')
+        self.coordinator = Coordinator(
+            process_summary=process_summary,
+            llm=self.llm
+        )
+    
+    
+    def get_agent_by_id(self, agent_id: str):
+        """Get an agent by its ID."""
+        for agent in self.org_agents + self.ext_agents:
+            if agent.id == agent_id:
+                return agent
