@@ -75,6 +75,9 @@ class AgentManager:
         simulation_configs = self.config_manager.configs
         role_actions = simulation_configs.get('org_role_action', {})
         agent_numbers = simulation_configs.get('org_role_num', {})
+        organization_context = simulation_configs.get('organization_summary', '')
+
+        org_agents = ""
 
         for agent_role, actions in role_actions.items():
             num_agents = agent_numbers.get(agent_role, 1)
@@ -86,13 +89,19 @@ class AgentManager:
                     role=agent_role,
                     actions=actions
                 )
-                agent.generate_data(self.ResourceData, llm=self.llm)
+                
+                agent.generate_data(data_model=self.ResourceData, llm=self.llm, organization_context=organization_context, org_agents=org_agents)
+                
+                # append to organization agents
+                org_agents += f'{agent.data}, role: {agent_role}\n'
+                
                 self.org_agents.append(agent)
 
     def create_ext_agent_onfly(self, role:str):
         """Create agents on the fly based on the configurations or handoff"""
         simulation_configs = self.config_manager.configs
         role_actions = simulation_configs.get('ext_role_actions', {})
+        organization_context = simulation_configs.get('organization_summary', '')
         
         used_ids = [agent.id for agent in self.org_agents] + [agent.id for agent in self.ext_agents]
         agent_id = generate_agent_id(used_ids=used_ids)
@@ -102,7 +111,7 @@ class AgentManager:
             role=role,
             actions=actions
         )
-        agent.generate_data(self.ResourceData, llm=self.llm)
+        agent.generate_data_onfly(data_model=self.ResourceData, llm=self.llm, organization_context=organization_context)
         self.ext_agents.append(agent)
         return agent
     

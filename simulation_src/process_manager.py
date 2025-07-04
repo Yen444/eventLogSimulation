@@ -45,7 +45,7 @@ class ProcessManager:
             else:
                 return ""
         with open(self.log_path, 'a', encoding='utf-8') as f:
-            writer = csv.DictWriter(f, fieldnames=["process_id", "action", "timestamp", "agent_role", "agent_data", "case_data", "event_data"])
+            writer = csv.DictWriter(f, fieldnames=["process_id", "action", "timestamp", "agent_role", "agent_data", "case_data", "event_data", "message"])
             #writer.writeheader()
             writer.writerow({
                 "process_id": log_event.process_id,

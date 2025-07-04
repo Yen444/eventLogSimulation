@@ -38,7 +38,7 @@ class Agent(BaseModel):
     data: Optional[str] = Field(default=None, description="Data related to the agent")
     actions: List[str] = Field(default_factory=list, description="List of actions the agent can perform")
 
-    def generate_data(self, data_model: BaseModel, llm, reflect=True):
+    def generate_data_onfly(self, organization_context, data_model: BaseModel, llm, reflect=True):
         data_attributes = data_model.model_fields.keys()
         # create string from list of data attributes
         data_attributes = ', '.join(data_attributes)
@@ -46,57 +46,150 @@ class Agent(BaseModel):
         random_text = generate_random_text_with_mem_chatbot()
         # create prompt for data
         sys_prompt = """
-        Given a person with the role of a {role}, randomly generate data of that person. \
-        The data should include the following attributes: {data_attributes}.
-        {random_text}
-        Return the output in a structured format, listing each attribute and its corresponding value:
+        You are tasked with generating realistic and coherent data for a person with the role of {role}.
+        This individual operates outside the organization but interacts with it within a business process context.
+
+        Organizational context:
+        {organization_context}
+
+        Please generate plausible values for the following attributes: {data_attributes}.
+
+        Guidelines:
+        - Ensure all values are internally consistent and appropriate for the specified role and organizational context.
+        - Emphasize diversity, plausibility, and details specific to the role.
+        
+        Return the output in a clearly structured format, listing each attribute and its corresponding value:
         - <attribute>: <value>
         - <attribute>: <value>
         - ...
         """
+
         prompt = PromptTemplate.from_template(sys_prompt)
-        structured_llm = llm_openai.with_structured_output(data_model)
+        structured_llm = llm.with_structured_output(data_model)
         chain = prompt | structured_llm
-        data = chain.invoke({"role": self.role, "data_attributes": data_attributes, "random_text": random_text})
+        data = chain.invoke({"role": self.role, "data_attributes": data_attributes, "organization_context": organization_context})
         data =  ", ".join(f"{k}: {v}" for k, v in data.model_dump().items())
         if not reflect:
             # write to data values
             self.data = data
             return
 
-        sys_prompt_reflect= """
-        You are given a person with the role of a {role} who participates in a business process.
+        sys_prompt_reflect = """
+        You are tasked with reviewing and refining personal data for a person with the role of {role} who interacts with the organization externally within a business process context.
 
-        We have some initial data for this person that is overly generic and unrealistic. Your task is to review this initial data and regenerate any attribute values that are generic, unrealistic, or common placeholders.
+        Organizational context:
+        {organization_context}
 
-        Specifically:
-        - **AVOID GENERIC PLACEHOLDERS:** Do not use names like "John Doe," "Jane Doe," "A. N. Other," "Test User," or similar default values.
-        - **AIM FOR REALISM & DIVERSITY:** Generate names and other details that sound like real people, potentially reflecting a diverse range of cultural backgrounds. Make the data specific and believable for the given role.
+        You have been provided with initial data that may contain generic, unrealistic, or placeholder values. Your goal is to revise these entries to ensure the data is realistic, coherent, and appropriate for the given role and organizational context.
 
-        The data should include the following attributes: {data_attributes}.
+        Guidelines:
+        - Avoid generic placeholders such as "John Doe", "Jane Doe", "A. N. Other", "Test User", or similarly artificial values.
+        - Ensure all attributes are plausible, unique, and reflect real-world diversity, relevant to the person's role.
+        - Maintain consistency with the organizational culture and business process context.
+        - Ensure that the generated data does not represent any biases or stereotypes related to gender, ethnicity, age, or other personal characteristics. Strive for fair and balanced representation in all attributes.
 
-        Here is the initial generic data you need to review and fix:
+        The data should cover the following attributes: {data_attributes}.
+
+        Initial data to review and refine:
         {data}
 
-        You may keep attribute-value pairs that are already realistic and specific.
+        Keep attribute-value pairs that are already realistic and specific; only update those that are too generic, inconsistent, or implausible.
 
-        Return the output in a structured format, listing each attribute and its corresponding value as follows:
+        Return the final output clearly formatted, listing each attribute with its corresponding value:
         - <attribute>: <value>
         - <attribute>: <value>
         - ...
         """
 
+
         prompt_reflect = PromptTemplate.from_template(sys_prompt_reflect)
         chain_reflect = prompt_reflect | structured_llm
-        data_reflect = chain_reflect.invoke({"role": self.role, "data_attributes": data_attributes, "data": data})
+        data_reflect = chain_reflect.invoke({"role": self.role, "data_attributes": data_attributes, "data": data,  "organization_context": organization_context})
     
         data_reflect = ", ".join(f"{k}: {v}" for k, v in data_reflect.model_dump().items())
+        self.data = data_reflect
+        
+        print(f'First generated data: {data}, role: {self.role}')
+        print(f'Regenerated data: {data_reflect}, role: {self.role}')
+
+    def generate_data(self, organization_context, org_agents, data_model: BaseModel, llm, reflect=True):
+        data_attributes = data_model.model_fields.keys()
+        # create string from list of data attributes
+        data_attributes = ', '.join(data_attributes)
+        # add random text to the prompt
+        random_text = generate_random_text_with_mem_chatbot()
+        # create prompt for data
+        sys_prompt = """
+        You are tasked with generating realistic and coherent data for a person with the role of {role} within an organization.
+
+        The organizational context is as follows: {organization_context}.
+
+        Generate plausible values for the following attributes: {data_attributes}. Ensure the values are internally consistent and appropriate for the given role and organizational context.
+
+        When generating this person's information, take into account the existing members of the organization to avoid unrealistic overlaps. For instance, if there are already two employees named Alice who are 30 years old, avoid adding a third with the same name and age.
+
+        Existing organization members:
+        {org_agents}
+
+        {random_text}
+
+        Return the output in a clearly structured format, listing each attribute and its corresponding value:
+        - <attribute>: <value>
+        - <attribute>: <value>
+        - ...
+        """
+
+        prompt = PromptTemplate.from_template(sys_prompt)
+        structured_llm = llm.with_structured_output(data_model)
+        chain = prompt | structured_llm
+        data = chain.invoke({"role": self.role, "data_attributes": data_attributes, "organization_context": organization_context, "org_agents": org_agents, "random_text": random_text})
+        data =  ", ".join(f"{k}: {v}" for k, v in data.model_dump().items())
         if not reflect:
             # write to data values
-            self.data = data_reflect
+            self.data = data
+            return
+
+        sys_prompt_reflect = """
+        You are tasked with reviewing and refining the personal data of a person with the role of {role} within an organization.
+
+        Organizational context:
+        {organization_context}
+
+        Existing organization members:
+        {org_agents}
+
+        You are provided with initial data that may contain generic, unrealistic, or placeholder-like values. Your goal is to revise any such entries to produce realistic, coherent, and contextually appropriate information that fits within the organization.
+
+        Guidelines:
+        - **AVOID GENERIC PLACEHOLDERS**: Do not use names like "John Doe", "Jane Doe", "A. N. Other", "Test User", or any similarly artificial values.
+        - **ENSURE REALISM & UNIQUENESS**: All attributes should reflect plausible real-world data. Names, ages, job details, etc., should be context-aware and diverse.
+        - **RESPECT CONTEXT**: Ensure that the attributes make sense given the person's role, the organization's culture, ect.
+        - **AVOID REPETITION**: Avoid duplications with existing employees (e.g., is it plausible for two employees both named Alice Bob and aged 30?)
+        - - **AVOID BIAS/STEREOTYPE**: Ensure that the generated data does not represent any biases or stereotypes related to gender, ethnicity, age, or other personal characteristics. Strive for fair and balanced representation in all attributes.
+
+        The data should include the following attributes: {data_attributes}.
+
+        Here is the initial data to be reviewed and refined:
+        {data}
+
+        Keep attribute-value pairs that are already realistic and specific. Update or replace only the ones that are too generic, inconsistent, or implausible.
+
+        Return the final output in a structured format, listing each attribute and its corresponding value:
+        - <attribute>: <value>
+        - <attribute>: <value>
+        - ...
+        """
+
+
+        prompt_reflect = PromptTemplate.from_template(sys_prompt_reflect)
+        chain_reflect = prompt_reflect | structured_llm
+        data_reflect = chain_reflect.invoke({"role": self.role, "data_attributes": data_attributes, "data": data,  "organization_context": organization_context, "org_agents": org_agents})
+    
+        data_reflect = ", ".join(f"{k}: {v}" for k, v in data_reflect.model_dump().items())
+        self.data = data_reflect
         
-        print(f'First generated data: {data}')
-        print(f'Regenerated data: {data_reflect}')
+        print(f'First generated data: {data}, role: {self.role}')
+        print(f'Regenerated data: {data_reflect}, role: {self.role}')
 
     
     def _create_action_prompt(self):
@@ -163,6 +256,8 @@ class Agent(BaseModel):
         - Repeat the above structured format for each action.
 
         **You can take consecutive actions, but you must ensure that the timestamp of each action is within {{update_interval}} hour from the current time.**
+        
+        **Sometimes you're overloaded with so many other tasks or with your life. If you can't do your assigned task, just specifiy the reason in the message field and leave other fields empty.
         """
 
         return prompt

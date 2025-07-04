@@ -12,7 +12,7 @@ import os
 
 from dotenv import load_dotenv
 import os
-import json
+import random
 
 load_dotenv()
 
@@ -157,7 +157,14 @@ class SimulationEngine:
                     if agent_id:
                         agent = self.agent_manager.get_agent_by_id(agent_id)
                     elif agent_role:
-                        agent = self.agent_manager.create_ext_agent_onfly(agent_role)
+                        # still have to check in agent role is an organization agent or not
+                        matching_agents = [a for a in org_agents if a.role == agent_role]
+                        if matching_agents:
+                            agent = random.choice(matching_agents)
+                        else:
+                            print(f'Create Ext Agent on fly')
+                            agent = self.agent_manager.create_ext_agent_onfly(agent_role)
+
                     else:
                         raise ValueError("Either agent_id or agent_role must be provided.")
                     # agent takes action
