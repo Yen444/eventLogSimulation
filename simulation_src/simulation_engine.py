@@ -39,7 +39,6 @@ class SimulationEngine:
         self.agent_manager = AgentManager(self.config_manager, llm)
         self.process_manager = ProcessManager(log_path)
         self.llm = llm
-        self.num_traces = 0
 
     def step(self, agent: Agent, process_id, current_time, update_interval, message, trigger=False):
         """Run a single step of the simulation."""
@@ -69,7 +68,7 @@ class SimulationEngine:
             if out:
                 for agent_output in out.agent_outputs:
                     if agent_output.action != None:
-                        if trigger:
+                        if trigger or agent_output.process_id == None:
                             log_event = logEvent(
                                 process_id=self.process_manager.generate_process_id(),
                                 agent=agent,
@@ -81,7 +80,6 @@ class SimulationEngine:
                                 agent=agent,
                                 event=agent_output
                             )
-                        self.num_traces += 1
                         self.process_manager.update_process(log_event=log_event, last_activities=self.config_manager.configs.get('last_activities', []))
             
     def run(self, start_time, end_time=None, inter_arrival_time=0, num_traces=None):
@@ -108,7 +106,7 @@ class SimulationEngine:
         while True:
             if end_time is not None and current_time >= end_time:
                 break
-            if num_traces is not None and self.num_traces >= num_traces:
+            if num_traces is not None and self.process_manager.num_complete_processes >= num_traces:
                 break
 
             print(f"Current time: {current_time}")

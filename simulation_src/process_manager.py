@@ -24,6 +24,7 @@ class ProcessInstance(BaseModel):
 class ProcessManager:
     def __init__(self, log_path):
         self.incomplete_processes: List[ProcessInstance] = []
+        self.num_complete_processes = 0
         self.log_events: List[logEvent] = []
         self.log_path = log_path
 
@@ -105,12 +106,14 @@ class ProcessManager:
 
 
         # update process instances
-        if log_event.event.action in last_activities:
+        if log_event.event.action in last_activities or log_event.event.end_action == True:
             # remove the process instance from the incomplete processes
             for process_instance in self.incomplete_processes:
                 if process_instance.process_id == log_event.process_id:
                     # remove the process instance from the incomplete processes
                     self.incomplete_processes.remove(process_instance)
+                    self.num_complete_processes += 1
+                    print(f'Num traces complete: {self.num_complete_processes}')
                     break
         else:
             # add the process instance to the incomplete processes

@@ -51,3 +51,23 @@ def create_dynamic_model(model_name: str, fields: Dict[str, Any]) -> BaseModel:
     """
     fields = {field: (str, Field(..., description=description)) for field, description in fields.items()}
     return create_model(model_name, **fields)
+
+from datetime import datetime
+
+def get_day_with_suffix(day):
+    if 11 <= day <= 13:
+        return f"{day}th"
+    suffixes = {1: 'st', 2: 'nd', 3: 'rd'}
+    return f"{day}{suffixes.get(day % 10, 'th')}"
+
+def extract_time_parts(timestamp_str):
+    # Parse ISO 8601 timestamp
+    dt = datetime.fromisoformat(timestamp_str)
+
+    hour = dt.strftime('%I:%M %p').lstrip('0').lower()      # e.g., '9:30 am'
+    day_name = dt.strftime('%A')                            # e.g., 'Monday'
+    day_suffix = get_day_with_suffix(dt.day)                # e.g., '1st'
+    month_name = dt.strftime('%B')                          # e.g., 'August'
+    month_with_day = f"{month_name} {day_suffix}"           # e.g., 'August 1st'
+
+    return f"at {hour} on {day_name} in {month_with_day}"

@@ -57,6 +57,7 @@ class AgentManager:
             message=(str, ...),
             event_data=(Optional[event_data_model], None),
             case_data=(Optional[case_data_model], None),
+            end_action=(Optional[bool], None),
             __base__=BaseModel,
         )
         

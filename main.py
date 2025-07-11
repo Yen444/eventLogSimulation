@@ -20,9 +20,10 @@ def main():
     simulation_engine = SimulationEngine(llm=llm_mid, config_path=simulation_config_path, log_path=log_path)
     start_time = '2018-01-01T00:00:00+00:00'
     end_time = '2019-01-01T00:00:00+00:00'
-    inter_arrival_time = 3600 * 18
-    simulation_engine.run(start_time, end_time, inter_arrival_time)
-
+    inter_arrival_time = 3600 * 12
+    simulation_engine.run(start_time=start_time, num_traces=692, inter_arrival_time=inter_arrival_time)
+    # Current time: 2018-05-12 12:00:00+00:00
+    # num traces complete: 220
 
 if __name__ == "__main__":
     main()

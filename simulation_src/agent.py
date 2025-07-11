@@ -4,7 +4,7 @@ from langchain_core.prompts import PromptTemplate
 
 
 from .llm_utils import generate_random_text_with_mem_chatbot
-from .utils import generate_agent_id
+from .utils import generate_agent_id, extract_time_parts
 from .config_manager import ConfigManager
 
 from dotenv import load_dotenv
@@ -233,11 +233,14 @@ class Agent(BaseModel):
         - case_data: ```<case_data_attribute_1>: <case_data_value_1>, <case_data_attribute_2>: <case_data_value_2>, ...```  
         - event_data: ```<event_data_attribute_1>: <event_data_value_1>, <event_data_attribute_2>: <event_data_value_2>, ...```
         - message: ```<your_message>```
+        - end_action: ```<True> or <False>```
 
         **If you think you can't finish any action in the next {{update_interval}} hour:**
         - Leave the `action` field and other fields empty.
+        - Some actions are easy to do, e.g. submit a claim, but some actions take time, e.g. now you need to deliver the goods but the order is only made 5 minutues before, you need to wait for the order to be done first.
+        - Therefore, use your logical thinking basing on the process state to take suitable action.
 
-        **Message should be a short description of what you did, your decision, or any other relevant information.**
+        **Message should be a short description of what you did, your decision, or any other relevant information. If you can't take the action at the moment (because you have to wait for something or you're overloaded, etc.), specify the reasons.**
 
         **Only output the data needed for the action you will take, which is specified in the action data mapping above, leave other attributes empty if it is not required for that action**
 
@@ -247,13 +250,16 @@ class Agent(BaseModel):
         - It must not be earlier than the timestamp of the ``SUBMIT CLAIM`` action. Because this action is the first action in the process and it must be finished before any other action.
 
         **If the current process state is empty, which means you're the first one to take action to initialize the process"
-        - Leave the process_id and output the other fields like described.
+        - Leave the process_id empty and output the other fields like described.
 
         **If the current process state is not empty, which means there is already a process_id**
         - Output the correct process_id like the one given to you and output the other fields like described.
 
         **If you finish multiple actions:**
         - Repeat the above structured format for each action.
+
+        **If you think the action you take can end the process:**
+        - Output True for end_action.
 
         **You can take consecutive actions, but you must ensure that the timestamp of each action is within {{update_interval}} hour from the current time.**
         
@@ -322,6 +328,7 @@ class Agent(BaseModel):
         1. **Is the timestamp appropriate:**  
         - Does the timestamp fall within a typical and reasonable time window for work-related activities?  
         - Avoid suggesting actions during biologically or culturally inappropriate times, such as deep night hours (e.g., 22:00-06:00), unless explicitly justified by the context.
+        - Ask yourself questions like are you working on Saturday and Sunday?
 
         2. **Personal Feasibility:**  
         - Are you, given your role and demographic profile, realistically able to complete the action at the specified timestamp?  
@@ -362,10 +369,11 @@ class Agent(BaseModel):
         to_remove = []
 
         for action in actions.agent_outputs:
+            timestamp_str = extract_time_parts(action.timestamp)
             action_string = (
                 f'Process_id: {action.process_id}, '
                 f'action: {action.action}, '
-                f'timestamp: {action.timestamp}, '
+                f'timestamp: You took this action {timestamp_str}, '
                 f'case_data: {", ".join([f"{key}: {value}" for key, value in (action.case_data.model_dump().items() if action.case_data else []) if value is not None])}, '
                 f'event_data: {", ".join([f"{key}: {value}" for key, value in (action.event_data.model_dump().items() if action.event_data else []) if value is not None])}\n'
             )
