@@ -109,8 +109,8 @@ class Agent(BaseModel):
         data_reflect = ", ".join(f"{k}: {v}" for k, v in data_reflect.model_dump().items())
         self.data = data_reflect
         
-        print(f'First generated data: {data}, role: {self.role}')
-        print(f'Regenerated data: {data_reflect}, role: {self.role}')
+        #print(f'First generated data: {data}, role: {self.role}')
+        #print(f'Regenerated data: {data_reflect}, role: {self.role}')
 
     def generate_data(self, organization_context, org_agents, data_model: BaseModel, llm, reflect=True):
         data_attributes = data_model.model_fields.keys()
@@ -188,8 +188,8 @@ class Agent(BaseModel):
         data_reflect = ", ".join(f"{k}: {v}" for k, v in data_reflect.model_dump().items())
         self.data = data_reflect
         
-        print(f'First generated data: {data}, role: {self.role}')
-        print(f'Regenerated data: {data_reflect}, role: {self.role}')
+        #print(f'First generated data: {data}, role: {self.role}')
+        #print(f'Regenerated data: {data_reflect}, role: {self.role}')
 
     
     def _create_action_prompt(self):
@@ -211,17 +211,17 @@ class Agent(BaseModel):
         You are assigned to the following current process instance with the message from the coordinator:
         Current Process State: {{process_state}}
         Message: {{message}}
+        Timestamp: {{current_time}} 
+           
 
-        You are given the following information:
-        Current Timestamp: {{current_time}}    
+        Based on the above information, decide whether you will finish any action for the assigned process.  
+        If you will finished the action, specify the process_id, the action(s), the start and end timestamp(s) at which you started and finished your action, and include necessary event and case data attributes.
+        Some actions are easy to do, e.g. submit a claim, but some actions take time, e.g. now you need to deliver the goods but the order is only made 5 minutues before, you need to wait for the order to be done first.
+        Therefore, use your logical thinking basing on the process state to take suitable action.
 
-        Based on the above information, decide whether you will finish any action for the assigned process within the next hour.  
-        If you will finished the action, specify the process_id, the action(s), the timestamp(s) at which you finished your action, and include necessary event and case data attributes.
-        
         Event Data Attributes: {{event_data_attributes}}
         Case Data Attributes: {{case_data_attributes}}
 
-        You must ensure that the timestamp of each action is within {{update_interval}} hour from the current time.
         You must output all values for the event data attributes.
         For case data attributes, only output the values that your action requires, if any. 
 
@@ -229,28 +229,26 @@ class Agent(BaseModel):
 
         - process_id: ```<process_id>```  
         - action: ```<your_chosen_action>```  
-        - timestamp: ```<timestamp_of_action>```  
+        - start_timestamp: ```<start_timestamp_of_action>```
+        - end_timestamp: ```<end_timestamp_of_action>```  
         - case_data: ```<case_data_attribute_1>: <case_data_value_1>, <case_data_attribute_2>: <case_data_value_2>, ...```  
         - event_data: ```<event_data_attribute_1>: <event_data_value_1>, <event_data_attribute_2>: <event_data_value_2>, ...```
         - message: ```<your_message>```
         - end_action: ```<True> or <False>```
 
-        **If you think you can't finish any action in the next {{update_interval}} hour:**
+        **If you think you can't finish any action**
         - Leave the `action` field and other fields empty.
-        - Some actions are easy to do, e.g. submit a claim, but some actions take time, e.g. now you need to deliver the goods but the order is only made 5 minutues before, you need to wait for the order to be done first.
-        - Therefore, use your logical thinking basing on the process state to take suitable action.
-
+        
         **Message should be a short description of what you did, your decision, or any other relevant information. If you can't take the action at the moment (because you have to wait for something or you're overloaded, etc.), specify the reasons.**
 
         **Only output the data needed for the action you will take, which is specified in the action data mapping above, leave other attributes empty if it is not required for that action**
 
         **Output a suitable timestamp for the action you will finish. The timestamp must satisfy all of the following conditions:**
-        - It must be within one hour from the current time.
-        - It must not be earlier than the current time.
-        - It must not be earlier than the timestamp of the ``SUBMIT CLAIM`` action. Because this action is the first action in the process and it must be finished before any other action.
+        - It must not be earlier than the timestamp you're assigned to.
 
         **If the current process state is empty, which means you're the first one to take action to initialize the process"
         - Leave the process_id empty and output the other fields like described.
+        - The end_timestamp of your initializing action MUST be identical to the timestamp at which you are assigned this action.
 
         **If the current process state is not empty, which means there is already a process_id**
         - Output the correct process_id like the one given to you and output the other fields like described.
@@ -261,10 +259,11 @@ class Agent(BaseModel):
         **If you think the action you take can end the process:**
         - Output True for end_action.
 
-        **You can take consecutive actions, but you must ensure that the timestamp of each action is within {{update_interval}} hour from the current time.**
+        **You can take consecutive actions for one process and same actions for different processes, depending on the process and process states you're given.**
         
         **Sometimes you're overloaded with so many other tasks or with your life. If you can't do your assigned task, just specifiy the reason in the message field and leave other fields empty.
-        """
+
+        **Be active. Even if you've only been assigned one action by the coordinator, take the initiative. Based on the process summary, your allowed actions, and the nature of those actions (e.g., quick tasks often performed in sequence), identify and perform any consecutive actions that logically follow. Be proactive—move the process forward when it makes sense.**        """
 
         return prompt
     
@@ -323,18 +322,18 @@ class Agent(BaseModel):
         {{previous_action}}
 
         **Your Task:**
-        Evaluate the *appropriateness* of the previously proposed action based *primarily* on the timestamp associated with that action. For the action, assess the following:
+        Evaluate the *appropriateness* of the previously proposed action based *primarily* on the timestamps associated with that action. For the action, assess the following:
 
-        1. **Is the timestamp appropriate:**  
-        - Does the timestamp fall within a typical and reasonable time window for work-related activities?  
-        - Avoid suggesting actions during biologically or culturally inappropriate times, such as deep night hours (e.g., 22:00-06:00), unless explicitly justified by the context.
+        1. **Are the timestamps appropriate:**  
+        - Does the start and end timestamps fall within a typical and reasonable time window for work-related activities?  
+        - Avoid suggesting actions during biologically or culturally inappropriate times, such as deep night hours, unless explicitly justified by the context.
         - Ask yourself questions like are you working on Saturday and Sunday?
 
         2. **Personal Feasibility:**  
-        - Are you, given your role and demographic profile, realistically able to complete the action at the specified timestamp?  
-        - Consider your energy levels, time availability, and workload distribution. If the timestamp is likely to hinder your ability to complete the action effectively, mark it as inappropriate.
+        - Are you, given your role and demographic profile, realistically able to complete the action at the specified timestamps?  
+        - Consider your energy levels, time availability, and workload distribution. If the timestamps are likely to hinder your ability to complete the action effectively, mark it as inappropriate.
 
-        **For each action, determine whether its timestamp is both appropriate and personally feasible:**
+        **For each action, determine whether its timestamps are both appropriate and personally feasible:**
 
         - If the action meets both criteria, output True.
 
@@ -369,11 +368,12 @@ class Agent(BaseModel):
         to_remove = []
 
         for action in actions.agent_outputs:
-            timestamp_str = extract_time_parts(action.timestamp)
+            start_timestamp_str = extract_time_parts(action.start_timestamp)
+            end_timestamp_str = extract_time_parts(action.end_timestamp)
             action_string = (
                 f'Process_id: {action.process_id}, '
                 f'action: {action.action}, '
-                f'timestamp: You took this action {timestamp_str}, '
+                f'timestamp: You started this action {start_timestamp_str} and finished this action {end_timestamp_str}, '
                 f'case_data: {", ".join([f"{key}: {value}" for key, value in (action.case_data.model_dump().items() if action.case_data else []) if value is not None])}, '
                 f'event_data: {", ".join([f"{key}: {value}" for key, value in (action.event_data.model_dump().items() if action.event_data else []) if value is not None])}\n'
             )

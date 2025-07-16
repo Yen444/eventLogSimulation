@@ -44,12 +44,13 @@ class Coordinator(BaseModel):
 
         If process_states is empty, it means no process is currently active. In this case, you need to call an agent to take an action that initializes the process. 
             - Simply omit the process ID in this scenario.
-            - Call only one agent role in this scenarios because we want to initialize only one process
-            - Read the process summary carefully to identify the agent role responsible for triggering the process by performing the first action
+            - Using the process summary to decide which agent you should call to initialize the process.
+            - Read the process summary carefully to identify the agent role responsible for triggering the process by performing the first action.
 
         If multiple processes needed to be handled and multiple agents needed to be called, output them in list.
         If you want to assign the agent within the organization, you muss define the agent_id and the agent_role.
         If you want to assign the agent outside the organization, but this agent has not existed yet in the external_agents and you need to contact a new one, define their agent_role.
+    
         
         ***Note***: 
             - Depending on the situation and the task, you should have suitable assignment, if the task is time consuming, you should not assign one agent with so many tasks but devide between agents who can be responsible for that task.
@@ -76,7 +77,7 @@ class Coordinator(BaseModel):
             "current_timestamp": current_timestamp
         })
 
-        print(f'Unstructured coordinator output: {coordinator_output_trial}')
+        #print(f'Unstructured coordinator output: {coordinator_output_trial}')
         coordinator_output = chain.invoke({
             "process_summary": self.process_summary,
             "process_states": process_states,

@@ -1,5 +1,6 @@
 from pydantic import BaseModel, Field
 from typing import List, Dict, Any, Optional, Type
+from datetime import datetime
 
 from .agent import Agent
 from .utils import generate_process_id
@@ -46,17 +47,19 @@ class ProcessManager:
             else:
                 return ""
         with open(self.log_path, 'a', encoding='utf-8') as f:
-            writer = csv.DictWriter(f, fieldnames=["process_id", "action", "timestamp", "agent_role", "agent_data", "case_data", "event_data", "message"])
+            writer = csv.DictWriter(f, fieldnames=["process_id", "action", "start_timestamp", "end_timestamp", "agent_role", "agent_data", "case_data", "event_data", "message", "end_action"])
             #writer.writeheader()
             writer.writerow({
                 "process_id": log_event.process_id,
                 "action": log_event.event.action,
-                "timestamp": log_event.event.timestamp,
+                "start_timestamp": log_event.event.start_timestamp,
+                "end_timestamp": log_event.event.end_timestamp,
                 "agent_role": log_event.agent.role,
                 "agent_data": log_event.agent.data,
                 "event_data": data2string(log_event.event.event_data),
                 "case_data": data2string(log_event.event.case_data),
-                "message": log_event.event.message
+                "message": log_event.event.message,
+                "end_action": log_event.event.end_action
             })
     def _update_process_data(self, log_event:logEvent, process_instance: ProcessInstance):
         """Update the process data for a given process ID."""
@@ -81,20 +84,25 @@ class ProcessManager:
             return ""
         for process_instance in self.incomplete_processes:
             if process_instance.process_id == process_id:
-                first_event = process_instance.events[0] if process_instance.events else None
+                #first_event = process_instance.events[0] if process_instance.events else None
                 last_event = process_instance.events[-1] if process_instance.events else None
-                process_state = f'Process ID: {process_instance.process_id}, First Action:: {first_event.event.action if first_event else 'No action is taken so far'} finished at {first_event.event.timestamp if first_event else ''}, Last Action: {last_event.event.action if last_event else 'No action is taken so far'} finished at {last_event.event.timestamp if last_event else ''}, Process Data: {process_instance.data}\n'
+                process_state = f'Process ID: {process_instance.process_id}, Last Action: {last_event.event.action if last_event else 'No action is taken so far'} finished at {last_event.event.end_timestamp if last_event else ''}, Process Data: {process_instance.data}\n'
                 return process_state
         return f'No process instance found with ID: {process_id}'
 
-    def get_incomplete_process_state(self) ->str:
-        """Get the current state of incomplete processes."""
+    def get_incomplete_process_state(self, current_time) ->str:
+        """Get the current state of incomplete processes.
+        Get only the processes that their latest event > current_time
+        """
+
         process_states = ""
         for process_instance in self.incomplete_processes:
-            first_event = process_instance.events[0] if process_instance.events else None
+            #first_event = process_instance.events[0] if process_instance.events else None
             last_event = process_instance.events[-1] if process_instance.events else None
-            process_state = f'Process ID: {process_instance.process_id}, First Action:: {first_event.event.action if first_event else 'No action is taken so far'} finished at {first_event.event.timestamp if first_event else ''}, Last Action: {last_event.event.action if last_event else 'No action is taken so far'} finished at {last_event.event.timestamp if last_event else ''}, Process Data: {process_instance.data}\n'
-            process_states += process_state
+            last_timestamp = last_event.event.end_timestamp
+            if datetime.fromisoformat(last_timestamp) <= current_time:
+                process_state = f'Process ID: {process_instance.process_id}, Last Action: {last_event.event.action if last_event else 'No action is taken so far'} finished at {last_event.event.end_timestamp if last_event else ''}, Process Data: {process_instance.data}\n'
+                process_states += process_state
         return process_states
     
     def update_process(self, log_event: logEvent, last_activities: List[str]):
@@ -106,15 +114,14 @@ class ProcessManager:
 
 
         # update process instances
-        if log_event.event.action in last_activities or log_event.event.end_action == True:
-            # remove the process instance from the incomplete processes
-            for process_instance in self.incomplete_processes:
+        if log_event.event.action in last_activities or log_event.event.end_action:
+            for process_instance in list(self.incomplete_processes):
                 if process_instance.process_id == log_event.process_id:
-                    # remove the process instance from the incomplete processes
                     self.incomplete_processes.remove(process_instance)
                     self.num_complete_processes += 1
                     print(f'Num traces complete: {self.num_complete_processes}')
                     break
+
         else:
             # add the process instance to the incomplete processes
             process_id = log_event.process_id

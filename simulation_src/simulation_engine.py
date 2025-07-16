@@ -34,11 +34,12 @@ llm_openai = ChatOpenAI(
 
 
 class SimulationEngine:
-    def __init__(self, llm, config_path, log_path):
+    def __init__(self, llm, config_path, log_path, arrivals):
         self.config_manager = ConfigManager(config_path=config_path)
         self.agent_manager = AgentManager(self.config_manager, llm)
         self.process_manager = ProcessManager(log_path)
         self.llm = llm
+        self.arrivals = arrivals # List of tuple of simulated arrival (timestamp, lamda)
 
     def step(self, agent: Agent, process_id, current_time, update_interval, message, trigger=False):
         """Run a single step of the simulation."""
@@ -64,11 +65,11 @@ class SimulationEngine:
                 message=message,
                 output_model=self.agent_manager.ListAgentOutput
             )
-            print(f'Agent Output: {out}')
+            print(f'Agent takes {len(out.agent_outputs)} actions')
             if out:
                 for agent_output in out.agent_outputs:
                     if agent_output.action != None:
-                        if trigger or agent_output.process_id == None:
+                        if trigger or agent_output.process_id == None or process_id==None:
                             log_event = logEvent(
                                 process_id=self.process_manager.generate_process_id(),
                                 agent=agent,
@@ -99,51 +100,64 @@ class SimulationEngine:
         if end_time is not None:
             end_time = datetime.datetime.fromisoformat(end_time)
 
-        inter_arrival_time = datetime.timedelta(seconds=inter_arrival_time)
+        inter_arrival_time = datetime.timedelta(hours=inter_arrival_time)
 
         current_time = start_time
 
         while True:
             if end_time is not None and current_time >= end_time:
                 break
-            if num_traces is not None and self.process_manager.num_complete_processes >= num_traces:
+            if num_traces is not None and self.process_manager.num_complete_processes > num_traces:
                 break
 
             print(f"Current time: {current_time}")
             # coordinator calls on agent to initialize the process
+
+            # Check if any arrivals within the time period current_time until the next timestamp
+            next_current_time = current_time + inter_arrival_time
+            sub_arrivals = [arrival for arrival in self.arrivals if current_time <= arrival[0] < next_current_time]
+
+            print(f'Number of arrivals in this updating step: {len(sub_arrivals)}')
+
+            if len(sub_arrivals) > 0:
+                for i, (arrival_time,_) in enumerate(sub_arrivals):
             
-            coordinator_outputs = self.agent_manager.coordinator.hand_off(process_states='', org_agents=self.agent_manager.org_agents, external_agents=self.agent_manager.ext_agents, current_timestamp=current_time)
+                    coordinator_outputs = self.agent_manager.coordinator.hand_off(process_states='', org_agents=self.agent_manager.org_agents, external_agents=self.agent_manager.ext_agents, current_timestamp=current_time)
 
-            print(f'Coordinator output: {coordinator_outputs}')
-            for coordinator_output in coordinator_outputs.coordinator_outputs:
-                if coordinator_output.process_id:
-                    process_id = coordinator_output.process_id
-                else:
-                    process_id = None
-                agent_id = coordinator_output.agent_id
-                agent_role = coordinator_output.agent_role
-                message = coordinator_output.message
-                print(f"Coordinator hands off to trigger agent: {agent_role} with agent_id: {agent_id}")
-                if agent_id:
-                    agent = self.agent_manager.get_agent_by_id(agent_id)
-                elif agent_role:
-                    agent = self.agent_manager.create_ext_agent_onfly(agent_role)
-                else:
-                    raise ValueError("Either agent_id or agent_role must be provided.")
-                
-                print(f'Trigger agent takes action')
+                    #print(f'Coordinator output: {coordinator_outputs}')
+                    for coordinator_output in coordinator_outputs.coordinator_outputs:
+                        if coordinator_output.process_id:
+                            process_id = coordinator_output.process_id
+                        else:
+                            process_id = None
+                        agent_id = coordinator_output.agent_id
+                        agent_role = coordinator_output.agent_role
+                        message = coordinator_output.message
+                        print(f"Coordinator hands off to trigger agent: {agent_role} with agent_id: {agent_id}")
+                        if agent_id:
+                            agent = self.agent_manager.get_agent_by_id(agent_id)
+                        elif agent_role:
+                            agent = self.agent_manager.create_ext_agent_onfly(agent_role)
+                        else:
+                            raise ValueError("Either agent_id or agent_role must be provided.")
+                        
+                        print(f'Trigger agent takes action')
 
-                self.step(agent=agent, process_id=process_id, current_time=current_time, update_interval=inter_arrival_time, message=message, trigger=True)
-
+                        self.step(agent=agent, process_id=process_id, current_time=arrival_time, update_interval=inter_arrival_time, message=message, trigger=True)
+            
             update_current_time = current_time
             
             for i in range(2):
                 print(f'coordinator hands off the process to the organization or external agents')
-                process_states = self.process_manager.get_incomplete_process_state()
+                process_states = self.process_manager.get_incomplete_process_state(current_time=update_current_time)
+                if process_states == "":
+                    update_current_time += (inter_arrival_time/2)
+                    print('There is no process to update')
+                    continue
                 org_agents = self.agent_manager.org_agents
                 external_agents = self.agent_manager.ext_agents
                 coordinator_outputs = self.agent_manager.coordinator.hand_off(process_states=process_states, org_agents=org_agents, external_agents=external_agents, current_timestamp=update_current_time)
-                print(f'Coordinator output: {coordinator_outputs}')
+                #print(f'Coordinator output: {coordinator_outputs}')
                 for coordinator_output in coordinator_outputs.coordinator_outputs:
                     if coordinator_output.process_id:
                         process_id = coordinator_output.process_id
@@ -167,7 +181,7 @@ class SimulationEngine:
                         raise ValueError("Either agent_id or agent_role must be provided.")
                     # agent takes action
                     print(f'Agent {agent.id} {agent.role} takes action')
-                    self.step(agent=agent, process_id=process_id, current_time=current_time, update_interval=update_current_time, message=message)
+                    self.step(agent=agent, process_id=process_id, current_time=current_time, update_interval=update_current_time, message=message, trigger=False)
 
                     update_current_time += (inter_arrival_time/2)
             
