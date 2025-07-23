@@ -41,13 +41,14 @@ class SimulationEngine:
         self.llm = llm
         self.arrivals = arrivals # List of tuple of simulated arrival (timestamp, lamda)
 
-    def step(self, agent: Agent, process_id, current_time, update_interval, message, trigger=False):
+    def step(self, agent: Agent, process_id, current_time, update_interval, message, trigger=False, reflect=True):
         """Run a single step of the simulation."""
 
         process_summary = self.config_manager.configs.get('process_summary', '')
         action_data_mapping = self.config_manager.configs.get('action_data', '')
         event_data_attributes = self.config_manager.configs.get('event_attributes')
         case_data_attributes = self.config_manager.configs.get('case_attributes')
+        conventions = self.config_manager.configs.get('conventions', [])
 
         process_state = self.process_manager.get_related_process(process_id=process_id)
         # Make sure Agent is not None
@@ -63,13 +64,15 @@ class SimulationEngine:
                 case_data_attributes=case_data_attributes,
                 update_interval=update_interval,
                 message=message,
-                output_model=self.agent_manager.ListAgentOutput
+                output_model=self.agent_manager.ListAgentOutput,
+                reflect=reflect,
+                conventions=conventions
             )
             print(f'Agent takes {len(out.agent_outputs)} actions')
             if out:
                 for agent_output in out.agent_outputs:
                     if agent_output.action != None:
-                        if trigger or agent_output.process_id == None or process_id==None:
+                        if trigger:
                             log_event = logEvent(
                                 process_id=self.process_manager.generate_process_id(),
                                 agent=agent,
@@ -143,7 +146,7 @@ class SimulationEngine:
                         
                         print(f'Trigger agent takes action')
 
-                        self.step(agent=agent, process_id=process_id, current_time=arrival_time, update_interval=inter_arrival_time, message=message, trigger=True)
+                        self.step(agent=agent, process_id=process_id, current_time=arrival_time, update_interval=inter_arrival_time, message=message, trigger=True, reflect=False)
             
             update_current_time = current_time
             
@@ -158,6 +161,10 @@ class SimulationEngine:
                 external_agents = self.agent_manager.ext_agents
                 coordinator_outputs = self.agent_manager.coordinator.hand_off(process_states=process_states, org_agents=org_agents, external_agents=external_agents, current_timestamp=update_current_time)
                 #print(f'Coordinator output: {coordinator_outputs}')
+                if coordinator_outputs is None or len(coordinator_outputs.coordinator_outputs) == 0:
+                    print('No coordinator output, no agent to call')
+                    update_current_time += (inter_arrival_time/2)
+                    continue
                 for coordinator_output in coordinator_outputs.coordinator_outputs:
                     if coordinator_output.process_id:
                         process_id = coordinator_output.process_id
@@ -181,7 +188,7 @@ class SimulationEngine:
                         raise ValueError("Either agent_id or agent_role must be provided.")
                     # agent takes action
                     print(f'Agent {agent.id} {agent.role} takes action')
-                    self.step(agent=agent, process_id=process_id, current_time=current_time, update_interval=update_current_time, message=message, trigger=False)
+                    self.step(agent=agent, process_id=process_id, current_time=update_current_time, update_interval=inter_arrival_time/2, message=message, trigger=False, reflect=False)
 
                     update_current_time += (inter_arrival_time/2)
             

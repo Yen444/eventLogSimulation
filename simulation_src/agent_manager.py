@@ -93,7 +93,8 @@ class AgentManager:
                 )
                 
                 agent.generate_data(data_model=self.ResourceData, llm=self.llm, organization_context=organization_context, org_agents=org_agents)
-                
+
+                #print(agent.data)
                 # append to organization agents
                 org_agents += f'{agent.data}, role: {agent_role}\n'
                 
@@ -121,9 +122,11 @@ class AgentManager:
         """Create a coordinator agent"""
         simulation_configs = self.config_manager.configs
         process_summary = simulation_configs.get('process_summary', '')
+        conventions = simulation_configs.get('conventions', [])
         self.coordinator = Coordinator(
             process_summary=process_summary,
-            llm=self.llm
+            llm=self.llm,
+            conventions=', '.join(conventions)
         )
     
     

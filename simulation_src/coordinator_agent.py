@@ -18,6 +18,7 @@ class Coordinator(BaseModel):
     """Coordinator Agent for managing processes and agents"""
     role: str = "coordinator"
     process_summary: str = Field(description="Summary of the process")
+    conventions: str = Field(default="", description="Conventions to follow when assigning agents to tasks")
     llm: Any = Field(default=None, description="LLM for generating responses")
 
     def hand_off(self, process_states, org_agents, external_agents, current_timestamp):
@@ -33,8 +34,8 @@ class Coordinator(BaseModel):
             - decide which agent should be assigned next for which process id
         You are given:
             - process_summary: the description of the process, which helps you know who do what.
-            - process_states: the states of all process instances going on
-            - organization_agents: list of all agents and their roles in the organization
+            - process_states: the states of all process instances going on, which helps you know what need to be done next.
+            - organization_agents: list of all agents and their roles in the organization. One agent can have multiple roles.
             - external_agents: list of all external agents and their roles
         Please output:
             - process_id: <which process to be handled next>
@@ -51,11 +52,14 @@ class Coordinator(BaseModel):
         If you want to assign the agent within the organization, you muss define the agent_id and the agent_role.
         If you want to assign the agent outside the organization, but this agent has not existed yet in the external_agents and you need to contact a new one, define their agent_role.
     
-        
+        You must follow the conventions below when assigning agents to tasks:
+        {conventions}
+
         ***Note***: 
             - Depending on the situation and the task, you should have suitable assignment, if the task is time consuming, you should not assign one agent with so many tasks but devide between agents who can be responsible for that task.
             - If the tasks needed to done in the sequence A->B (which means task B must be done after task A), you can't assign 2 tasks to 2 differents agents, you only can assign 2 tasks to same agent or only task A to one agent and wait until task A is done before you can assign task B.
             - If the tasks A and B can done parallel, then you can do anything of the above.
+            - Don't assign different agents to same activity of the same process.
         
         Below is the information given to you:
         Process_summary: {process_summary}
@@ -68,22 +72,13 @@ class Coordinator(BaseModel):
         structured_llm = self.llm.with_structured_output(ListCoordinatorOutput)
         prompt = PromptTemplate.from_template(prompt)
         chain = prompt | structured_llm
-        chain_trial = prompt | self.llm
-        coordinator_output_trial = chain_trial.invoke({
-            "process_summary": self.process_summary,
-            "process_states": process_states,
-            "org_agents": org_agents_str,   
-            "external_agents": external_agents_str,
-            "current_timestamp": current_timestamp
-        })
-
-        #print(f'Unstructured coordinator output: {coordinator_output_trial}')
         coordinator_output = chain.invoke({
             "process_summary": self.process_summary,
             "process_states": process_states,
             "org_agents": org_agents_str,   
             "external_agents": external_agents_str,
-            "current_timestamp": current_timestamp
+            "current_timestamp": current_timestamp,
+            'conventions':  self.conventions
         })
         return coordinator_output
         

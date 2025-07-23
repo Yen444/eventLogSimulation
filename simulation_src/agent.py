@@ -214,10 +214,13 @@ class Agent(BaseModel):
         Timestamp: {{current_time}} 
            
 
-        Based on the above information, decide whether you will finish any action for the assigned process.  
-        If you will finished the action, specify the process_id, the action(s), the start and end timestamp(s) at which you started and finished your action, and include necessary event and case data attributes.
+        Based on the above information, decide whether you will take any action for the assigned process.  
+        If you will take any action, specify the process_id, the action, the start and end timestamp at which you started and finished your action, and include necessary event and case data attributes.
+        
         Some actions are easy to do, e.g. submit a claim, but some actions take time, e.g. now you need to deliver the goods but the order is only made 5 minutues before, you need to wait for the order to be done first.
         Therefore, use your logical thinking basing on the process state to take suitable action.
+
+        When you take an action, consider the following conventions, your action must reflect the following conventions: {{conventions}}
 
         Event Data Attributes: {{event_data_attributes}}
         Case Data Attributes: {{case_data_attributes}}
@@ -261,13 +264,13 @@ class Agent(BaseModel):
 
         **You can take consecutive actions for one process and same actions for different processes, depending on the process and process states you're given.**
         
-        **Sometimes you're overloaded with so many other tasks or with your life. If you can't do your assigned task, just specifiy the reason in the message field and leave other fields empty.
+        **Sometimes you're overloaded with so many other tasks or with your life. If you can't do your assigned task, just specifiy the reason in the message field and leave other fields empty."""
+        #**Be active. Even if you've only been assigned one action by the coordinator, take the initiative. Based on the process summary, your allowed actions, and the nature of those actions (e.g., quick tasks often performed in sequence), after taking your assigned action, identify and perform any consecutive actions that logically follow. Be proactive—move the process forward when it makes sense.**"""
 
-        **Be active. Even if you've only been assigned one action by the coordinator, take the initiative. Based on the process summary, your allowed actions, and the nature of those actions (e.g., quick tasks often performed in sequence), identify and perform any consecutive actions that logically follow. Be proactive—move the process forward when it makes sense.**        """
 
         return prompt
     
-    def _take_action(self, output_model, llm, process_summary: str, process_state: str, action_data_mapping: Dict[str, List[str]], current_time: str, event_data_attributes: List[str], case_data_attributes: List[str], update_interval:str, message: str):
+    def _take_action(self, output_model, llm, process_summary: str, process_state: str, action_data_mapping: Dict[str, List[str]], current_time: str, event_data_attributes: List[str], case_data_attributes: List[str], update_interval:str, message: str, conventions: List[str]):
         """
         Act based on the process summary, process state, action data mapping, current time, event data attributes, and case data attributes.
 
@@ -295,7 +298,8 @@ class Agent(BaseModel):
             "event_data_attributes": ', '.join(event_data_attributes),
             "case_data_attributes": ', '.join(case_data_attributes),
             "update_interval": update_interval,
-            "message": message
+            "message": message,
+            "conventions":  ', '.join(conventions)
         })
         
         return agent_outputs
@@ -345,7 +349,7 @@ class Agent(BaseModel):
         """
         return verify_prompt
 
-    def act(self, output_model, llm, process_summary: str, process_state: str, action_data_mapping: Dict[str, List[str]], current_time: str, event_data_attributes: List[str], case_data_attributes: List[str], message:str, update_interval: str = "1", reflect=True):
+    def act(self, output_model, llm, process_summary: str, process_state: str, action_data_mapping: Dict[str, List[str]], current_time: str, event_data_attributes: List[str], case_data_attributes: List[str], message:str, conventions:str, update_interval: str = "1", reflect=True):
             
         actions = self._take_action(
             llm=llm,
@@ -357,7 +361,8 @@ class Agent(BaseModel):
             case_data_attributes=case_data_attributes,
             update_interval=update_interval,
             message=message,
-            output_model=output_model
+            output_model=output_model,
+            conventions=conventions
         )
         if not reflect:
             return actions

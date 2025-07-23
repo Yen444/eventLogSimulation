@@ -84,9 +84,12 @@ class ProcessManager:
             return ""
         for process_instance in self.incomplete_processes:
             if process_instance.process_id == process_id:
-                #first_event = process_instance.events[0] if process_instance.events else None
-                last_event = process_instance.events[-1] if process_instance.events else None
-                process_state = f'Process ID: {process_instance.process_id}, Last Action: {last_event.event.action if last_event else 'No action is taken so far'} finished at {last_event.event.end_timestamp if last_event else ''}, Process Data: {process_instance.data}\n'
+                actions_with_timestamps = [
+                    f'{event.event.action} at {event.event.end_timestamp}'
+                    for event in process_instance.events
+                ]
+                actions_str = ', '.join(actions_with_timestamps) if actions_with_timestamps else 'No actions taken so far'
+                process_state = f'Process ID: {process_instance.process_id}, Last Actions: {actions_str}, Process Data: {process_instance.data}\n'
                 return process_state
         return f'No process instance found with ID: {process_id}'
 
@@ -95,18 +98,36 @@ class ProcessManager:
         Get only the processes that their latest event > current_time
         """
 
-        process_states = ""
+        process_state_lines = []
+
         for process_instance in self.incomplete_processes:
-            #first_event = process_instance.events[0] if process_instance.events else None
-            last_event = process_instance.events[-1] if process_instance.events else None
+            if not process_instance.events:
+                continue
+
+            last_event = process_instance.events[-1]
             last_timestamp = last_event.event.end_timestamp
+
             if datetime.fromisoformat(last_timestamp) <= current_time:
-                process_state = f'Process ID: {process_instance.process_id}, Last Action: {last_event.event.action if last_event else 'No action is taken so far'} finished at {last_event.event.end_timestamp if last_event else ''}, Process Data: {process_instance.data}\n'
-                process_states += process_state
-        return process_states
+                actions_with_timestamps = [
+                    f'{event.event.action} at {event.event.end_timestamp}'
+                    for event in process_instance.events
+                ]
+
+                actions_str = ', '.join(actions_with_timestamps) if actions_with_timestamps else 'No actions taken so far'
+
+                process_state = (
+                    f'Process ID: {process_instance.process_id}, '
+                    f'Last Actions: {actions_str}, '
+                    f'Process Data: {process_instance.data}'
+                )
+                process_state_lines.append(process_state)
+
+        return '\n'.join(process_state_lines)
     
     def update_process(self, log_event: logEvent, last_activities: List[str]):
         """Add a log event and update the process instance."""
+        if log_event.process_id is None:
+            return
         # add log event to all log events
         self.log_events.append(log_event)
         # write log event to the log file
