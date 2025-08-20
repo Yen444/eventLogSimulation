@@ -102,6 +102,9 @@ def simulate_arrivals(start_time, base_rate, monthly_rate, weekday_rate, hourly_
     if max_events is None and end_time is None:
         raise ValueError("Either max_events or end_time must be provided.")
 
+    # add extra buffer to max_events
+    max_events = max_events + max_events/10
+
     t = datetime.fromisoformat(start_time)
     arrivals = []
 
@@ -114,7 +117,7 @@ def simulate_arrivals(start_time, base_rate, monthly_rate, weekday_rate, hourly_
             break
 
         # Stop if enough events are collected
-        if max_events is not None and len(arrivals) >= max_events:
+        if len(arrivals) >= max_events:
             break
 
         # Step 1: sample time until next candidate event

@@ -56,6 +56,8 @@ class ProcessManager:
             # if the file is empty, write header first
             if f.tell() == 0:
                 writer.writeheader()
+                # add a blank line after the header to separate header from data
+                f.write('\n')
             writer.writerow({
                 "iteration_id": log_event.iteration_id,
                 "process_id": log_event.process_id,
@@ -71,6 +73,8 @@ class ProcessManager:
                 "end_action": log_event.event.end_action,
                 "process_state": log_event.process_state
             })
+            # add a blank line after each log entry to separate entries visually
+            f.write('\n')
     def _update_process_data(self, log_event:logEvent, process_instance: ProcessInstance):
         """Update the process data for a given process ID."""
         case_data = log_event.event.case_data.model_dump() if log_event.event.case_data else {}
