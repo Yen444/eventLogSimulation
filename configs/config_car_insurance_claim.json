@@ -1,0 +1,68 @@
+{
+    "process_summary": "The car insurance claim process begins with the customer *submit claim**. The Notification Department **check documentation** and **register claim**. The Handling Department then **check insurance** and **perform assessment**. If the result is rejected, the Handling Department can **reject claim**. If the claim is rejected, the customer is notified (**notify customer**). If the claim is approved, the Handling Department arranges repair with a garage (**arrange repair**). The garage repairs the vehicle; the Handling Department arranges the payment (**schedule payment**). Finally, the customer is informed of the claim resolution.",
+    "organization_summary": "The car insurance company is based in Germany.",
+    "agent_data": {
+        "name": "Name of the agent",
+        "age": "Age of the agent",
+        "gender": "Gender of the agent",
+        "job_title": "Job title of the agent"
+    },
+    "case_attributes": {
+        "vehicle": "Vehicle involved in the claim",
+        "claim_type": "Type of claim (e.g., accident, theft)",
+        "incident_description": "Description of the incident",
+        "damage": "Extent of damage to the vehicle",
+        "claim_result": "Result of the claim (approved/rejected)"
+    },
+    "event_attributes": {
+        "task_difficulty": "Difficulty of the task, rated from 1 to 5",
+        "task_duration": "Estimated duration of the task in hours",
+        "satisfaction": "Satisfaction level with the task, rated from 1 to 5"
+    },
+    "org_role_action": {
+        "Notification department": [
+            "Check documentation",
+            "Register claim"
+        ],
+        "Handling department": [
+            "Check insurance",
+            "Perform assessment",
+            "Reject claim",
+            "Arrange repair",
+            "Schedule payment",
+            "Notify customer"
+        ]
+    },
+    "ext_role_action": {
+        "Customer": [
+            "submit claim"
+        ]
+    },
+    "trigger_role": "Customer",
+    "trigger_action": "submit claim",
+    "org_role_num": {
+        "Notification department": 2,
+        "Handling department": 4
+    },
+    "action_data": {
+        "submit claim": [
+            "vehicle",
+            "claim_type",
+            "incident_description",
+            "damage"
+        ],
+        "Perform assessment": [
+            "claim_result"
+        ],
+        "Notify customer": [
+            "Notification message"
+        ]
+    }, 
+    "last_activities": [
+        "Notify customer"
+    ],
+    "conventions": [
+        "Female employers takes more time to complete the task than male employers",
+        "Claim type which are related to theft take more time to assess than accident claims"
+    ]
+}

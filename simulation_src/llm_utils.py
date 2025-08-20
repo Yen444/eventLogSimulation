@@ -2,7 +2,6 @@ from typing import List
 from pydantic import BaseModel, Field, field_validator
 from langchain_core.prompts import PromptTemplate
 
-from simulation.utils import read_bpmn_file
 
 from dotenv import load_dotenv
 import os

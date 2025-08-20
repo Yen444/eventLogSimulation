@@ -1,0 +1,70 @@
+{
+    "process_summary": "This guide outlines the precise sequence of activities for the SRM to Invoice Clearing process. Follow each step carefully, adhering to all conditions, parallel paths, and optional steps. Do not skip or reorder any activities unless explicitly stated.\n\n---\n\n**Phase 1: SRM Operations (SRM Operations Team)**\n\n**Action:** Begin by executing the following SRM activities *in strict order*:\n1. `SRM: Created`\n2. `SRM: Complete`\n3. `SRM: Waiting for Approval`\n4. `SRM: Document Complete`\n    *(Note: Most SRM activities are quick system clicks.)*\n\n**Action:** Once the above four SRM activities are fully completed, proceed with the following two activities. These can occur **in parallel** (at the same time):\n* `SRM: In Transfer to Execution System`\n* `SRM: Ordered`\n    *(Ensure BOTH of these parallel activities are completed before moving to the next phase.)*\n\n---\n\n**Phase 2: Purchasing & Receiving (Purchasing and Receiving Team)**\n\n**Action:** After `SRM: In Transfer to Execution System` and `SRM: Ordered` are both complete, perform the following:\n1. `Create Purchase Order Item`\n2. **Optional:** `Change Price` (Execute this step *only if necessary*.)\n3. `Record Goods Receipt`\n\n---\n\n**Phase 3: Invoice Processing (Invoice Recording Team & Invoice Clearing Team)**\n\n**Action:** The Invoice Recording Team will then:\n* `Record Invoice Receipt`\n    *(Note: This step can occur *before* or *after* `Record Goods Receipt`, but both `Record Goods Receipt` and `Record Invoice Receipt` must be completed before proceeding.)*\n\n**Action:** Once both `Record Goods Receipt` and `Record Invoice Receipt` are completed:\n* Check for any existing payment blocks. If a payment block exists, **remove it**.\n\n**Action:** Finally, the Invoice Clearing Team will:\n* `Clear Invoice`\n\n---\n\n**Important Rules to Remember:**\n\n*   **Strict Adherence:** All steps must be executed in the exact sequence specified. Do not skip or reorder steps unless explicitly stated as optional or parallel.\n*   **Completion:** Ensure each activity is fully completed before moving to the subsequent step or phase.\n*  Many SRM steps involve a simple system click and are typically quick to perform.",
+    "organization_summary": "The organization is a company based in the Netherlands, specializing in coatings and paints. It has a distinctly international culture, with a relatively high proportion of foreign employees. The company values age diversity, employing people across various experience levels—from junior to senior. Both part-time and full-time work arrangements are supported",
+    "agent_data": {
+        "name": "Name of the resource agent",
+        "age": "Age of the resource agent",
+        "gender": "Gender of the resource agent"
+    },
+    "case_attributes": {
+        "spend_area": "A high-level category that classifies overall organizational spending, such as IT, logistics, or production",
+        "sub_spend_area": "A more specific classification within a spend area, detailing the exact type of goods or services procured",
+        "net_worth": "The value of the item in Euro",
+        "vendor": "The external supplier providing goods or services for a purchase order",
+        "changed_net_worth": "The changed value of the item in Euro if the price is changed."
+    },
+    "event_attributes": {
+        "task_difficulty": "Difficulty of the task, rated from 1 to 5",
+        "task_duration": "Estimated duration of the task in hours",
+        "satisfaction": "Satisfaction level with the task, rated from 1 to 5"
+    },
+    "org_role_action": {
+        "SRM Operation Team": [
+            "SRM: Created",
+            "SRM: Complete",
+            "SRM: Awaiting Approval",
+            "SRM: Document Complete",
+            "SRM: In Transfer to Execution Syst.",
+            "SRM: Ordered",
+            "SRN: Change was Transmitted"
+        ],
+        "Purchasing and Receiving Team": [
+            "Create Purchase Order Item",
+            "Record Goods Receipt"
+        ],
+        "Invoicing Recording Team": [
+            "Record Invoice Receipt"
+        ],
+        "Invoice Clearing Team": [
+            "Clear Invoice"
+        ],
+        "Payment Processing Team": [
+            "Remove Payment Block"
+        ]
+    },
+    "ext_role_action": {},
+    "trigger_role": "SRM Operation Team",
+    "trigger_action": "SRM: Created",
+    "org_role_num": {
+        "SRM Operation Team": 1, 
+        "Purchasing and Receiving Team": 1,
+        "Invoicing Recording Team": 8,
+        "Invoice Clearing Team": 2,
+        "Payment Processing Team": 1
+    },
+    "action_data": {
+        "SRM: Created": [
+            "spend_area",
+            "sub_spend_area",
+            "net_worth",
+            "vendor"
+        ]
+    }, 
+    "last_activities": [
+        "Clear Invoice"
+    ],
+    "conventions": [
+        "Female employers takes more time to complete the task than male employers",
+        "SRM with networth above 1000 Euro should be dealt with by senior employees"
+    ]
+}

@@ -56,11 +56,19 @@ class Coordinator(BaseModel):
         {conventions}
 
         ***Note***: 
-            - Depending on the situation and the task, you should have suitable assignment, if the task is time consuming, you should not assign one agent with so many tasks but devide between agents who can be responsible for that task.
-            - If the tasks needed to done in the sequence A->B (which means task B must be done after task A), you can't assign 2 tasks to 2 differents agents, you only can assign 2 tasks to same agent or only task A to one agent and wait until task A is done before you can assign task B.
-            - If the tasks A and B can done parallel, then you can do anything of the above.
-            - Don't assign different agents to same activity of the same process.
-        
+            **Individual Process Evaluation is Paramount:** Each task assignment *must* be determined by the specific, current state of its *individual process*. Never batch tasks across processes without verifying each process's unique state; the required task for a process is *solely dependent on that process's current state*.
+
+            **Optimize Resource Allocation:** For time-consuming tasks, distribute the workload among multiple capable agents to prevent bottlenecks and ensure efficient completion.
+
+            **Respect Task Dependencies:**
+                - If Task B must follow Task A for the same process (A -> B), either assign both to the *same agent*, or assign Task A, *wait for its completion and result*, then assign Task B.
+                - Always wait for a preceding task's completion and result before assigning any dependent subsequent tasks.
+                - Leverage parallelism: Tasks within the same process that can run in parallel, or tasks belonging to different processes, can be assigned to different agents or the same agent concurrently.
+
+            **Maintain Process Integrity:**
+                - Never assign different agents to the same activity within the same process.
+                - Strictly adhere to Process IDs: Each process has a unique state and guidelines. Carefully read Process IDs and their current states to ensure every assignment aligns precisely with that process's specific requirements and general guidelines.
+
         Below is the information given to you:
         Process_summary: {process_summary}
         Process_states: {process_states}

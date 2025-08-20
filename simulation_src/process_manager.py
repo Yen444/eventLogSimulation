@@ -15,6 +15,9 @@ class logEvent(BaseModel):
     process_id: str = ""
     agent: Agent
     event: Any
+    process_state: str = ""
+    iteration_id: int = 0
+    sub_iteration_id: int = 0
 
 class ProcessInstance(BaseModel):
     """Process instance for the simulation"""
@@ -46,12 +49,16 @@ class ProcessManager:
                 return ', '.join([f'{k}: {v}' for k, v in data.model_dump().items()])
             else:
                 return ""
+        # ensure header includes iteration_id; write rows appended
         with open(self.log_path, 'a', encoding='utf-8') as f:
-            writer = csv.DictWriter(f, fieldnames=["process_id", "action", "start_timestamp", "end_timestamp", "agent_role", "agent_data", "case_data", "event_data", "message", "end_action"])
+            # store combined iteration id as iteration_sub (e.g. 0_0, 0_1)
+            writer = csv.DictWriter(f, fieldnames=["iteration_id", "process_id", "action", "agent_id", "start_timestamp", "end_timestamp", "agent_role", "agent_data", "case_data", "event_data", "message", "end_action", "process_state"])
             #writer.writeheader()
             writer.writerow({
+                "iteration_id": f"{log_event.iteration_id}_{log_event.sub_iteration_id}",
                 "process_id": log_event.process_id,
                 "action": log_event.event.action,
+                "agent_id": log_event.agent.id,
                 "start_timestamp": log_event.event.start_timestamp,
                 "end_timestamp": log_event.event.end_timestamp,
                 "agent_role": log_event.agent.role,
@@ -59,7 +66,8 @@ class ProcessManager:
                 "event_data": data2string(log_event.event.event_data),
                 "case_data": data2string(log_event.event.case_data),
                 "message": log_event.event.message,
-                "end_action": log_event.event.end_action
+                "end_action": log_event.event.end_action,
+                "process_state": log_event.process_state
             })
     def _update_process_data(self, log_event:logEvent, process_instance: ProcessInstance):
         """Update the process data for a given process ID."""
@@ -89,7 +97,7 @@ class ProcessManager:
                     for event in process_instance.events
                 ]
                 actions_str = ', '.join(actions_with_timestamps) if actions_with_timestamps else 'No actions taken so far'
-                process_state = f'Process ID: {process_instance.process_id}, Last Actions: {actions_str}, Process Data: {process_instance.data}\n'
+                process_state = f'Process ID: {process_instance.process_id}, Last Actions: {actions_str}, Process Data: {process_instance.data}'
                 return process_state
         return f'No process instance found with ID: {process_id}'
 
