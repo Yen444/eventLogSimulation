@@ -16,8 +16,7 @@ class logEvent(BaseModel):
     agent: Agent
     event: Any
     process_state: str = ""
-    iteration_id: int = 0
-    sub_iteration_id: int = 0
+    iteration_id: str = ""
 
 class ProcessInstance(BaseModel):
     """Process instance for the simulation"""
@@ -42,20 +41,23 @@ class ProcessManager:
 
     def _write_to_log_file(self, log_event: logEvent):
         """Write log event to the log file."""
-        # open the log file in append mode
-        # and write the log event to it
+        # open the log file in append mode and write a header if empty
         def data2string(data):
             if data:
                 return ', '.join([f'{k}: {v}' for k, v in data.model_dump().items()])
             else:
                 return ""
         # ensure header includes iteration_id; write rows appended
-        with open(self.log_path, 'a', encoding='utf-8') as f:
+        # use newline='' to avoid extra blank lines on Windows
+        with open(self.log_path, 'a', newline='', encoding='utf-8') as f:
             # store combined iteration id as iteration_sub (e.g. 0_0, 0_1)
-            writer = csv.DictWriter(f, fieldnames=["iteration_id", "process_id", "action", "agent_id", "start_timestamp", "end_timestamp", "agent_role", "agent_data", "case_data", "event_data", "message", "end_action", "process_state"])
-            #writer.writeheader()
+            fieldnames = ["iteration_id", "process_id", "action", "agent_id", "start_timestamp", "end_timestamp", "agent_role", "agent_data", "case_data", "event_data", "message", "end_action", "process_state"]
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            # if the file is empty, write header first
+            if f.tell() == 0:
+                writer.writeheader()
             writer.writerow({
-                "iteration_id": f"{log_event.iteration_id}_{log_event.sub_iteration_id}",
+                "iteration_id": log_event.iteration_id,
                 "process_id": log_event.process_id,
                 "action": log_event.event.action,
                 "agent_id": log_event.agent.id,

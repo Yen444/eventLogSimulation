@@ -53,21 +53,22 @@ class SimulationEngine:
                 f.write("")
         # if protocol file is empty, write header
         if os.path.getsize(self.protocol_path) == 0:
+            # open with newline='' so csv.writer won't add extra blank lines on Windows
             with open(self.protocol_path, 'w', newline='', encoding='utf-8') as f:
                 writer = csv.writer(f)
                 # store combined iteration id as iteration_sub (e.g. 0_0, 0_1)
                 writer.writerow(["iteration_id", "timestamp", "from_agent", "to_agent", "process_id", "message", "process_state"])
 
-    def log_protocol(self, timestamp, from_agent, to_agent, process_id, message, iteration_id=None, process_state="", sub_iteration_id=0):
+    def log_protocol(self, timestamp, from_agent, to_agent, process_id, message, process_state="", combined_iteration=None):
         """Log the protocol of the simulation."""
         # Log to CSV
+        # open with newline='' so csv.writer handles newlines correctly
         with open(self.protocol_path, mode='a', newline='', encoding='utf-8') as f:
             writer = csv.writer(f)
-            combined = f"{iteration_id}_{sub_iteration_id}"
+            combined = combined_iteration if combined_iteration is not None else f'{self.iteration_id}'
             writer.writerow([combined, timestamp, from_agent, to_agent, process_id, message, process_state])
-            writer.writerow([])  # Add an empty line after each entry
 
-    def step(self, agent: Agent, process_id, current_time, update_interval, message, trigger=False, reflect=True, sub_iteration=0):
+    def step(self, agent: Agent, process_id, current_time, update_interval, message, trigger=False, reflect=True, combined_iteration=None):
         """Run a single step of the simulation."""
 
         process_summary = self.config_manager.configs.get('process_summary', '')
@@ -101,13 +102,13 @@ class SimulationEngine:
                     for idx, agent_output in enumerate(out.agent_outputs):
                         # Always create a log_event. If the agent actually performed an action, update process state;
                         # otherwise write an empty-output row to the log file so we can track "no action" decisions.
+                        safe_combined = combined_iteration if combined_iteration is not None else f'{self.iteration_id}'
                         log_event = logEvent(
                             process_id=process_id,
                             agent=agent,
                             event=agent_output,
                             process_state=process_state,
-                            iteration_id=self.iteration_id,
-                            sub_iteration_id=sub_iteration if sub_iteration else idx
+                            iteration_id=f'{safe_combined}_{idx}'
                         )
                         if agent_output.action is not None:
                             self.process_manager.update_process(log_event=log_event, last_activities=self.config_manager.configs.get('last_activities', []))
@@ -117,13 +118,13 @@ class SimulationEngine:
                 else:
                     for idx, agent_output in enumerate(out.agent_outputs):
                         # Always create a log_event. Write to process manager if action present; otherwise log empty output row.
+                        safe_combined = combined_iteration if combined_iteration is not None else f'{self.iteration_id}'
                         log_event = logEvent(
                             process_id=agent_output.process_id,
                             agent=agent,
                             event=agent_output,
                             process_state=process_state,
-                            iteration_id=self.iteration_id,
-                            sub_iteration_id=sub_iteration if sub_iteration else idx
+                            iteration_id=f'{safe_combined}_{idx}'
                         )
                         if agent_output.action is not None:
                             self.process_manager.update_process(log_event=log_event, last_activities=self.config_manager.configs.get('last_activities', []))
@@ -173,12 +174,16 @@ class SimulationEngine:
 
             print(f'Number of arrivals in this updating step: {len(sub_arrivals)}')
 
+
             if len(sub_arrivals) > 0:
+                sub_iteration = 0
                 for i, (arrival_time,_) in enumerate(sub_arrivals):
-            
+                    sub_sub_iteration = i
+
                     coordinator_outputs = self.agent_manager.coordinator.hand_off(process_states='', org_agents=self.agent_manager.org_agents, external_agents=self.agent_manager.ext_agents, current_timestamp=current_time)
 
-                    for coordinator_output in coordinator_outputs.coordinator_outputs:
+                    for j, coordinator_output in enumerate(coordinator_outputs.coordinator_outputs):
+                        sub_sub_sub_iteration = j
                         if coordinator_output.process_id:
                             process_id = coordinator_output.process_id
                         else:
@@ -196,30 +201,29 @@ class SimulationEngine:
                         
                         print(f'Trigger agent takes action')
 
+                        # combined_sub_iteration
+                        combined_iteration = f'{self.iteration_id}_{sub_iteration}_{sub_sub_iteration}_{sub_sub_sub_iteration}'
                         # pass sub-iteration (index within this arrival batch)
-                        self.step(agent=agent, process_id=process_id, current_time=arrival_time, update_interval=inter_arrival_time, message=message, trigger=True, reflect=False, sub_iteration=i)
-
+                        self.step(agent=agent, process_id=process_id, current_time=arrival_time, update_interval=inter_arrival_time, message=message, trigger=True, reflect=False, combined_iteration=combined_iteration)
+                        #
                         self.log_protocol(
                             timestamp=current_time,
                             from_agent='coordinator',
                             to_agent=agent_role if agent_id is None else agent.id,
                             process_id=process_id,
                             message=message,
-                            iteration_id=self.iteration_id,
                             process_state=self.process_manager.get_related_process(process_id=process_id),
-                            sub_iteration_id=i
+                            combined_iteration=combined_iteration
                         )
                         # consume the earliest arrival when coordinator hands off to a trigger agent
                         if self.arrivals:
                             self.arrivals.pop(0)
                         # increment iteration id after logging the handoff
-                
-                self.iteration_id += 1
                     
             update_current_time = current_time
             
             for i in range(2):
-                sub_iteration = i
+                sub_iteration = i+1
                 print(f'coordinator hands off the process to the organization or external agents')
                 process_states = self.process_manager.get_incomplete_process_state(current_time=update_current_time)
                 if process_states == "":
@@ -234,7 +238,8 @@ class SimulationEngine:
                     print('No coordinator output, no agent to call')
                     update_current_time += (inter_arrival_time/2)
                     continue
-                for coordinator_output in coordinator_outputs.coordinator_outputs:
+                for j, coordinator_output in enumerate(coordinator_outputs.coordinator_outputs):
+                    sub_sub_iteration = j
                     if coordinator_output.process_id:
                         process_id = coordinator_output.process_id
                     else:
@@ -258,23 +263,23 @@ class SimulationEngine:
                     # agent takes action
                     print(f'Agent {agent.id} {agent.role} takes action')
                     # pass current sub_iteration index so logs and events can be correlated
-                    self.step(agent=agent, process_id=process_id, current_time=update_current_time, update_interval=inter_arrival_time/2, message=message, trigger=False, reflect=False, sub_iteration=sub_iteration)
+                    combined_iteration = f'{self.iteration_id}_{sub_iteration}_{sub_sub_iteration}'
+                    self.step(agent=agent, process_id=process_id, current_time=update_current_time, update_interval=inter_arrival_time/2, message=message, trigger=False, reflect=False, combined_iteration=combined_iteration)
                     self.log_protocol(
                         timestamp=update_current_time,
                         from_agent='coordinator',
                         to_agent=agent_role if agent_id is None else agent.id,
                         process_id=process_id,
                         message=message,
-                        iteration_id=self.iteration_id,
                         process_state=process_states,
-                        sub_iteration_id=sub_iteration
+                        combined_iteration=combined_iteration
                     )
 
                     # increment iteration id after each coordinator handoff
-                self.iteration_id += 1
 
                 update_current_time += (inter_arrival_time/2)
             
             current_time += inter_arrival_time
+            self.iteration_id += 1
 
             
