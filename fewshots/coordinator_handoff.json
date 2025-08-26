@@ -1,0 +1,105 @@
+[
+    {
+        "process_summary": "This guide outlines the precise sequence of activities for the SRM to Invoice Clearing process. Follow each step carefully, adhering to all conditions, parallel paths, and optional steps. Do not skip or reorder any activities unless explicitly stated.\n\n---\n\n**Phase 1: SRM Operations (SRM Operations Team)**\n\n**Action:** Begin by executing the following SRM activities *in strict order*:\n1. `SRM: Created`\n2. `SRM: Complete`\n3. `SRM: Waiting for Approval`\n4. `SRM: Document Complete`\n    *(Note: Most SRM activities are quick system clicks.)*\n\n**Action:** Once the above four SRM activities are fully completed, proceed with the following two activities. These can occur **in parallel** (at the same time):\n* `SRM: In Transfer to Execution System`\n* `SRM: Ordered`\n    *(Ensure BOTH of these parallel activities are completed before moving to the next phase.)*\n\n---\n\n**Phase 2: Purchasing & Receiving (Purchasing and Receiving Team)**\n\n**Action:** After `SRM: In Transfer to Execution System` and `SRM: Ordered` are both complete, perform the following:\n1. `Create Purchase Order Item`\n2. **Optional:** `Change Price` (Execute this step *only if necessary*.)\n3. `Record Goods Receipt`\n\n---\n\n**Phase 3: Invoice Processing (Invoice Recording Team & Invoice Clearing Team)**\n\n**Action:** The Invoice Recording Team will then:\n* `Record Invoice Receipt`\n    *(Note: This step can occur *before* or *after* `Record Goods Receipt`, but both `Record Goods Receipt` and `Record Invoice Receipt` must be completed before proceeding.)*\n\n**Action:** Once both `Record Goods Receipt` and `Record Invoice Receipt` are completed:\n* Check for any existing payment blocks. If a payment block exists, **remove it**.\n\n**Action:** Finally, the Invoice Clearing Team will:\n* `Clear Invoice`\n\n---\n\n**Important Rules to Remember:**\n\n*   **Strict Adherence:** All steps must be executed in the exact sequence specified. Do not skip or reorder steps unless explicitly stated as optional or parallel.\n*   **Completion:** Ensure each activity is fully completed before moving to the subsequent step or phase.\n*  Many SRM steps involve a simple system click and are typically quick to perform.",
+        "process_states": "Process ID: BJK56, Last Actions: SRM: Created at 2018-01-03 03:50:35.828133+00:00, SRM: Complete at 2018-01-03 07:07:21.219350+00:00, Process Data: {'spend_area': 'IT', 'sub_spend_area': 'Hardware', 'net_worth': '1200', 'vendor': 'Dell', 'changed_net_worth': ''}, \nProcess ID: PVM06, Last Actions: SRM: Created at 2018-01-03 09:58:43.197691+00:00, Process Data: {'spend_area': 'IT', 'sub_spend_area': 'Software Licenses', 'net_worth': '500', 'vendor': 'Microsoft', 'changed_net_worth': ''}", 
+        "organization_agents": "ID: 90100; role: SRM Operations Team; actions: SRM: Created, SRM: Complete, SRM: Awaiting Approval, SRM: Document Complete, SRM: In Transfer to Execution Syst., SRM: Ordered, SRN: Change was Transmitted; data: age: 38, gender: female \nID: 20500; role: Purchasing and Receiving Team; actions: Create Purchase Order Item, Record Goods Receipt; data: age: 25, gender: male\nID: 18678; role: Invoicing Recording Team; actions: Record Invoice Receipt; data: age: 30, gender: non-binary\nID: 35956; role: Invoice Clearing Team; actions: Clear Invoice; data: age: 29, gender: male\nID: 56783; role: Payment Processing Team; actions: Remove Payment Block; data: age: 49, gender: female",
+        "external_agents": "ID: 12345; role: External Consultant; actions: Review Invoice; data: age: 35, gender: male",
+        "current_timestamp": "2018-02-28 11:17:28.593358+00:00",
+        "conventions": "An invoice can only be cleared at least one week after the corresponding goods receipt has been recorded, Case with networth above 1000 Euro should be dealt with by senior employees",
+        "output": [
+            {
+                "reasoning": "So we have 2 processes going on. Let's look at the first process BJK56. Next actions for process ID BJK56 is SRM: Waiting for approval. We can look a bit further, next activity after that is SRM: Document Complete. These two activities can be done by one agent, so I can assign one agent to these two task. The net_worth of this process is 1200, above 1000 so I should assign to an senior one. But we have only one agent for the SRM Operation team so I have no choice.",
+                "process_id": "BJK56",
+                "agent_id": "90100",
+                "agent_role": "SRM Operations Team",
+                "message": "Please handle the following tasks for process ID BJK56: SRM: Waiting for Approval, SRM: Document Complete. You must do these actions one by one and follow the order."
+            },
+            {
+                "reasoning": "Let's look at the second process PVM06. The last action is SRM: Created. Next actions should be SRM-related actions, such as SRM: Complete, SRM: Waiting for Approval, SRM: Document Complete. Since these actions can be done by one agent, I can assign these actions to one agent. However these actions must follow a strict order, I should emphasize that. We have only one agent for the SRM Operation team so I have no choice.",
+                "process_id": "PVM06",
+                "agent_id": "90100",
+                "agent_role": "SRM Operations Team",
+                "message": "Please handle the following tasks for process ID PVM06: SRM: Complete, SRM: Waiting for Approval, SRM: Document Complete. You must do these actions one by one and follow the order."
+            }
+        ]
+    },
+    {
+        "process_summary": "The car insurance claim process begins with the customer submitting a claim. The Notification Department then performs two sequential steps: check documentation and register claim. The Handling Department takes over by checking insurance and performing an assessment. If the result is rejected, the Handling Department rejects the claim and the customer is notified. If the result is approved, the Handling Department arranges repair with a garage. The garage performs the repair, after which the Handling Department schedules payment. Finally, the customer is informed of the claim resolution.",
+        "process_states": "", 
+        "organization_agents": "ID: 11001; role: Notification Department; actions: Submit Claim, Check Documentation, Register Claim; data: age: 34, gender: female\nID: 22002; role: Handling Department; actions: Check Insurance, Perform Assessment, Reject Claim, Arrange Repair, Schedule Payment, Notify Customer; data: age: 41, gender: male\nID: 22003; role: Handling Department; actions: Check Insurance, Perform Assessment, Reject Claim, Arrange Repair, Schedule Payment, Notify Customer; data: age: 52, gender: female",
+        "external_agents": "ID:; role: Customer; actions: Submit Claim; data:\nID:; role: Garage; actions: Repair Vehicle; data:",
+        "current_timestamp": "2024-04-05 10:09:05.000000+00:00",
+        "conventions": "",
+        "output": [
+            {
+                "reasoning": "The process state is currently empty, which means I have to handoff to a trigger agent to initiate the process. According to the process summary, the first step is for the customer to submit a claim. Therefore, I need to call Customer, this agent is external agent and doesn't exist yet and therefore not yet have an ID, I just need to specify the role.",
+                "process_id": "",
+                "agent_id": "",
+                "agent_role": "Customer",
+                "message": "Please initiate the process by submitting a claim."
+            }
+        ]
+    },
+    {
+        "process_summary": "The Vacation Request process begins when the Employee starts the process by performing the action Register Vacation Request. The Boss then handles the request in two sequential steps: Verify Available Vacation Days and Check Vacation Request. At this point, a decision is made. If the request is approved, the Human Resource Assistant performs Make Administrative Task, and the process ends. If the request is rejected, the Employee proceeds to Review Rejection Reason, after which the process ends.",
+        "process_states": "Process ID: VRP01, Last Actions: Register Vacation Request at 2024-04-30 09:12:00.000000+00:00, Process Data: {'employee': 'Alice Green', 'requested_days': 5}\nProcess ID: VRP02, Last Actions: Register Vacation Request at 2024-05-01 10:20:00.000000+00:00 Verify Available Vacation Days at 2024-05-01 10:45:30.000000+00:00 Check Vacation Request at 2024-05-01 14:45:30.000000+00:00, Process Data: {'employee': 'Bob White', 'requested_days': 12, 'available_days': 11, request_state: rejected}\nProcess ID: VRP03, Last Actions: Register Vacation Request at 2024-04-20 11:20:10.000000+00:00 Verify Available Vacation Days at 2024-04-30 17:15:20.000000+00:00 Check Vacation Request at 2024-05-01 13:55:19.000000+00:00, Process Data: {'employee': 'Clara Brown', 'requested_days': 8, 'available_days': 15', request_state: approved}",
+        "organization_agents": "ID: 51001; role: Employee; actions: Register Vacation Request, Review Rejection Reason; data: name: Alice Green, age: 30, gender: female\nID: 51002; role: Employee; actions: Register Vacation Request, Review Rejection Reason; data: name: Bob White, age: 41, gender: male\nID: 51003; role: Employee; actions: Register Vacation Request, Review Rejection Reason; data: name: Clara Brown, age: 28, gender: non-binary\nID: 51004; role: Employee; actions: Register Vacation Request, Review Rejection Reason; data: name: Yang Yi, age: 37, gender: male\nID: 52002; role: Boss; actions: Verify Available Vacation Days, Check Vacation Request; data: name: Jessica Claim, age: 45, gender: female\nID: 53003; role: Human Resource Assistant; actions: Make Administrative Task; data: name: Clara Guter, age: 23, gender: female",
+        "external_agents": "",
+        "current_timestamp": "2024-05-02 08:00:00.000000+00:00",
+        "conventions": "Requests exceeding available vacation days must be rejected. All decisions must be explicitly recorded.",
+        "output": [
+            {
+                "reasoning": "For process ID VRP01 (employee Alice Green, requested 5 days): The last action was Register Vacation Request. The next steps are Verify Available Vacation Days and Check Vacation Request, handled by the Boss. Since these actions can be done by one agent, I will assign these two actions to the Boss.",
+                "process_id": "VRP01",
+                "agent_id": "52002",
+                "agent_role": "Boss",
+                "message": "Please handle the following tasks for process ID VRP01: Verify Available Vacation Days, Check Vacation Request. Execute them sequentially and record the decision."
+            },
+            {
+                "reasoning": "For process ID VRP02 (employee Bob White, requested 12 days, 11 available, request_state: rejected). Since the request is rejected. According to the process summary, the next step is for the Employee to review the rejection reason. The request is made by employee Bob White so I have to assign this task to Bob White. I first need to look for Bob White's ID.",
+                "process_id": "VRP02",
+                "agent_id": "51002",
+                "agent_role": "Employee",
+                "message": "Please handle the following task for process ID VRP02: Review Rejection Reason."
+            },
+            {
+                "reasoning": "For process ID VRP03 (employee Clara Brown, requested 8 days, 15 available, request_state: approved):  The last action was Check Vacation Request and the request_state is approved. Therefore the next step is for the Human Resource Assistant to perform Make Administrative Task.",
+                "process_id": "VRP03",
+                "agent_id": "53003",
+                "agent_role": "Human Resource Assistant",
+                "message": "Please handle the following task for process ID VRP03: Make Administrative Task."
+            }
+        ]
+    },
+    {
+        "process_summary": "The Employee Onboarding process begins when a new hire is registered by the HR Team (`Register New Employee`). After registration, two tasks can be performed in parallel: the IT Support Team sets up the employee's computer, email, and access credentials (`Setup IT Accounts`), and the Facilities Team prepares the workspace, including desk, phone, and office access (`Prepare Workspace`). Once both parallel tasks are completed, the HR Team proceeds to conduct an orientation session (`Conduct Orientation`) and the manager assigns initial tasks (`Assign Initial Tasks`).",
+        "process_states": "Process ID: EOP01, Last Actions: Register New Employee at 2025-08-25 09:00:00.000000+00:00, Process Data: {'employee': 'Lars Jeans', 'position': 'Data Analyst'}\nProcess ID: EOP02, Last Actions:  Register New Employee at 2025-08-24 08:15:00.000000+00:00 Setup IT Accounts at 2025-08-25 10:30:00.000000+00:00, Process Data: {'employee': 'Tony Berger', 'position': 'Software Engineer'}",
+        "organization_agents": "ID: 61001; role: HR Team; actions: Register New Employee, Conduct Orientation; data: age: 38, gender: female\nID: 62001; role: IT Support Team; actions: Setup IT Accounts; data: age: 24, gender: male\nID: 62002; role: IT Support Team; actions: Setup IT Accounts; data: age: 37, gender: female\nID: 62003; role: IT Support Team; actions: Setup IT Accounts; data: age: 29, gender: male\nID: 63003; role: Facilities Team; actions: Prepare Workspace; data: age: 31, gender: female\nID: 64004; role: Manager; actions: Assign Initial Tasks; data: age: 45, gender: female",
+        "external_agents": "",
+        "current_timestamp": "2025-08-26 08:00:00.000000+00:00",
+        "conventions": "",
+        "output": [
+            {
+                "reasoning": "For process EOP01, the last action was Register New Employee. The next two actions, Setup IT Accounts and Prepare Workspace, can be executed in parallel by two different teams. Among the multiple IT Support Team agents, I can assign ID 62001 for Setup IT Accounts. Facilities Team (ID 63003) handles Prepare Workspace.",
+                "process_id": "EOP01",
+                "agent_id": "62001",
+                "agent_role": "IT Support Team",
+                "message": "Please handle the task for process EOP01: Setup IT Accounts."
+            },
+            {
+                "reasoning": "For process EOP01, the last action was Register New Employee. The next two actions, Setup IT Accounts and Prepare Workspace, can be executed in parallel by two different teams. Among the multiple IT Support Team agents, I can assign ID 62001 for Setup IT Accounts. Facilities Team (ID 63003) handles Prepare Workspace.",
+                "process_id": "EOP01",
+                "agent_id": "63003",
+                "agent_role": "Facilities Team",
+                "message": "Please handle the task for process EOP01: Prepare Workspace."
+            },
+            {
+                "reasoning": "For process EOP02, the last completed action was Setup IT Accounts. The remaining parallel task is Prepare Workspace, which must be handled by the Facilities Team (ID 63003). I cannot assign subsequent tasks, such as Conduct Orientation or Assign Initial Tasks, until this task is fully completed, as the onboarding process requires both parallel tasks to finish before moving forward.",
+                "process_id": "EOP02",
+                "agent_id": "63003",
+                "agent_role": "Facilities Team",
+                "message": "Please handle the task for process EOP02: Prepare Workspace."
+            }
+        ]
+}
+]
