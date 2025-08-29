@@ -103,7 +103,7 @@ def simulate_arrivals(start_time, base_rate, monthly_rate, weekday_rate, hourly_
         raise ValueError("Either max_events or end_time must be provided.")
 
     # add extra buffer to max_events
-    max_events = max_events + max_events/10
+    max_events = max_events + max_events/5
 
     t = datetime.fromisoformat(start_time)
     arrivals = []

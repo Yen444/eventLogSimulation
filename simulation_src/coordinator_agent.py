@@ -22,8 +22,8 @@ class Coordinator(BaseModel):
     llm: Any = Field(default=None, description="LLM for generating responses")
 
     def hand_off(self, process_states, org_agents, external_agents, current_timestamp):
-        org_agents_str = ', '.join([f"ID: {agent.id} (role: {agent.role}, actions: {agent.actions})" for agent in org_agents])
-        external_agents_str = ', '.join([f"ID: {agent.id} (role: {agent.role}, actions: {agent.actions})" for agent in external_agents])
+        org_agents_str = '\n'.join([f"ID: {agent.id}; (role: {agent.role}; actions: {agent.actions}; data: {agent.data})" for agent in org_agents])
+        external_agents_str = '\n'.join([f"ID: {agent.id}; (role: {agent.role}; actions: {agent.actions}; data: {agent.data})" for agent in external_agents])
         prompt = """
         You are the coordinator of a process.
         The process has many instances going on. Each instance has its unique ID and its current state.

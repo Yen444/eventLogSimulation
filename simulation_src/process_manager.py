@@ -137,7 +137,7 @@ class ProcessManager:
                 process_state_lines.append(process_state)
 
         return '\n'.join(process_state_lines)
-    
+
     def update_process(self, log_event: logEvent, last_activities: List[str]):
         """Add a log event and update the process instance."""
         if log_event.process_id is None:

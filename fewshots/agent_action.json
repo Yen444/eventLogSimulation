@@ -1,0 +1,87 @@
+[
+    {
+        "role": "SRM Operations Team",
+        "data": "name: Clara Weining, age: 24, gender: female",
+        "actions": "SRM: Created, SRM: Complete, SRM: Awaiting Approval, SRM: Document Complete, SRM: In Transfer to Execution Syst., SRM: Ordered, SRN: Change was Transmitted",
+        "process_summary": "The process begins with the SRM Operations Team performing the following SRM activities in strict order: SRM: Created, SRM: Complete, SRM: Waiting for Approval, and SRM: Document Complete. Once these activities are completed, proceed with SRM: In Transfer to Execution System and SRM: Ordered, which can be executed in parallel. Both must be completed before continuing. All SRM-related steps mostly involve simple system clicks and are typically quick to perform. Next, the Purchasing and Receiving Team Create Purchase Order Item. Parallel to this activity, the SRM Operation Team can carry on the activity SRM: Change was Transmitted. After these two activities are done, and after the goods arrive, the Purchasing and Receiving Team will Record Goods Receipt. Concurrently, the Invoice Recording Team records the Invoice Receipt, which may occur either before or after the goods receipt, but both activities must be completed before moving forward. After these steps, any existing payment blocks should be checked and removed if present. The process concludes with the Invoice Clearing Team completing Clear Invoice.",
+        "process_state": "",
+        "action_data_mapping": "SRM: Created → spend_area, sub_spend_area, net_worth, vendor",
+        "event_data_attribute": "task_difficulty → Difficulty of the task, rated from 1 to 5; task_duration → Estimated duration of the task in hours; satisfaction → Satisfaction level with the task, rated from 1 to 5",
+        "case_data_attribute": "spend_area → A high-level category that classifies overall organizational spending, such as IT, logistics, or production; sub_spend_area → A more specific classification within a spend area, detailing the exact type of goods or services procured; net_worth → The value of the item in Euro; vendor → The external supplier providing goods or services for a purchase order; changed_net_worth → The changed value of the item in Euro if the price is changed.",
+        "conventions": "Male employers takes more time to complete the task than female employers. An invoice can only be cleared at least one week after the corresponding goods receipt has been recorded.",
+        "message": "Initialize the process",
+        "current_time": "2023-10-05T12:00:00+00:00",
+        "output": {
+            "reasoning": "The process state is empty, the message tells me to initialize the process. According to the process summary I should initialize the process with the action SRM: created. This action belong to my allowed action so I can do it. Now, look at the data action mapping, I need to output spend_area, sub_spend_area, net_worth, and vendor. These data should be varied and meaningful for the whole process context. I also have to output event data task_difficulty, task_duration, and satisfaction, task_duration, and satisfaction. Now, about the time, I received the message at 2023-10-05T12:00:00+00:00, which is on Thursday, since the action doesn't take long I will do it after lunch and i guess it only takes 5 until 10 minutes to finish it. I also need to following conventions but since there is no statistics I don't know how much the activity takes in average so I would say it will takes me 10 mins.",
+            "process_id": "",
+            "action": "SRM: Created",
+            "start_timestamp": "2023-10-05T13:15:00+00:00",
+            "end_timestamp": "2023-10-05T13:24:00+00:00",
+            "case_data": "spend_area: Enterprise Services, sub_spend_area: Office supplies, net_worth: 124, vendor: R2B Store",
+            "event_data": "task_difficulty: 2, task_duration: 10, satisfaction: 4",
+            "end_action": "False",
+            "message": "Initialized the process"
+        }
+    },
+    {
+        "role": "Notification Department",
+        "data": "name: Jina Clown, age: 30, gender: female",
+        "actions": "Check Documentation, Register Claim",
+        "process_summary": "The car insurance claim process begins with the customer submitting a claim. The Notification Department then performs two sequential steps: check documentation and register claim. The Handling Department takes over by checking insurance and performing an assessment. If the result is rejected, the Handling Department rejects the claim and the customer is notified. If the result is approved, the Handling Department arranges repair with a garage. The garage performs the repair, after which the Handling Department schedules payment. Finally, the customer is informed of the claim resolution.",
+        "process_state": "Process ID: CJK78, Last action: Submit Claim at 2024-04-05 10:09:05.000000+00:00, Process Data: {incident_description: Car accident on highway 5, incident_date: 2024-04-01, damage: front bumper and cracked windshields}",
+        "action_data_mapping": "Submit Claim -> incident_description, incident_date, damage; Check Documentation -> formal_compliance; Perform Accessment -> claim_status",
+        "event_data_attribute": "incident_description -> a short description of the incident, incident_date -> the date of the incident, damage -> a description of the damage to the car, formal_compliance -> Yes or No, if the claim documentation meet all the formal requirements, claim_status -> approved or rejected, if the claim request is approved or rejected",
+        "case_data_attribute": "",
+        "conventions": "",
+        "message": "Perform Check Documentation for process CJK78",
+        "current_time": "2024-04-06 10:09:05.000000+00:00",
+        "output": [
+            {
+                "reasoning": "So I got the message to perform Check Documentation for process CJK78. This action is within my ability. However, according to the process summary and to my ability, I can carry out 2 sequential actions Check Documentation and Register Claim. These 2 activities seem like they will follow each other and I don't need to wait for anything after Check Documentation to carry out the other one so I will do two. I need to output the data formal_compliance like shown in the action data mapping for the Check Documentation action and no data for Register Claim. About the time, I received the message at 2024-04-06 10:09:05.000000+00:00, which is Saturday but normally I don't work on Saturday because I have to take my daughter to swimming pool on Saturday. I will do it on Monday when I am back at the office.",
+                "process_id": "CJK78",
+                "action": "Check Documentation",
+                "start_timestamp": "2024-04-08 11:05:05.000000+00:00",
+                "end_timestamp": "2024-04-08 14:35:05.000000+00:00",
+                "case_data": "formal_compliance: Yes",
+                "event_data": "",
+                "end_action": "False",
+                "message": "Document checked, everything is ok."
+            },
+            {
+                "process_id": "CJK78",
+                "action": "Register Claim",
+                "start_timestamp": "2024-04-08 15:20:05.000000+00:00",
+                "end_timestamp": "2024-04-08 15:35:05.000000+00:00",
+                "case_data": "",
+                "event_data": "",
+                "end_action": "False",
+                "message": "Claim registered successfully."
+            }
+        ]
+        
+    },
+    {
+        "role": "Boss",
+        "data": "name: Jessica Doe, age: 45, gender: female",
+        "actions": "Verify Available Vacation Days, Check Vacation Request",
+        "process_summary": "",
+        "process_state": "Process ID: VRP03, Last Actions: Register Vacation Request at 2024-04-20 11:20:10.000000+00:00 Verify Available Vacation Days at 2024-04-30 17:15:20.000000+00:00, Process Data: {'employee': 'Clara Brown', 'requested_days': 8, 'available_days': 15}",
+        "action_data_mapping": "Register Vacation Request -> employee, requested_days, Verify Available Vacation Days -> available_days, Check Vacation Request -> request_status",
+        "event_data_attribute": "",
+        "case_data_attribute": "employee -> name of the employee applying for vacation, requested_days -> number of vacation days requested, available_days -> number of vacation days available for that employee, request_status -> approved or rejected, status of the vacation request",
+        "conventions": "Vacation requests of more than 2 weeks take more time to decide.",
+        "message": "Check vacation request for process VRP03",
+        "current_time": "2024-04-30 17:30:20.000000+00:00",
+        "output": {
+            "reasoning": "So I am the boss and I need to do the action check vacation request and this action is within my allowed action, so I can do it. I need to output data request_status after checking it. Well, since her available days are 15 and she only request for 8 days so I will approve this request. And this will not takes me a lot of time to decide like said in the conventions. Now the time, I receive the message at 2024-04-30 17:30:20.000000+00:00, which is on Tuesday. Normally I finish work before 17:00 but checking it doesn't take so much time so I will quickly do it now.",
+            "process_id": "VRP03",
+            "action": "Check Vacation Request",
+            "start_timestamp": "2024-04-30 17:35:20.000000+00:00",
+            "end_timestamp": "2024-04-30 17:40:20.000000+00:00",
+            "case_data": "request_status: approved",
+            "event_data": "",
+            "end_action": "False",
+            "message": "I checked the vacation request. The request has been approved."
+        }
+    }
+]
