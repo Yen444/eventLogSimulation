@@ -5,6 +5,7 @@ from .agent import Agent
 from .agent_manager import AgentManager
 from .config_manager import ConfigManager
 from .process_manager import ProcessManager, logEvent
+from .prompt_manager import create_prompt_manager
 
 from collections import OrderedDict
 import datetime
@@ -37,7 +38,9 @@ llm_openai = ChatOpenAI(
 class SimulationEngine:
     def __init__(self, llm, config_path, log_path, protocol_path, arrivals):
         self.config_manager = ConfigManager(config_path=config_path)
-        self.agent_manager = AgentManager(self.config_manager, llm)
+        # create a PromptManager and pass it to AgentManager
+        prompt_manager = create_prompt_manager()
+        self.agent_manager = AgentManager(self.config_manager, prompt_manager, llm)
         self.process_manager = ProcessManager(log_path)
 
         self.protocol_path = protocol_path

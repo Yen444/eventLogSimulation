@@ -8,6 +8,7 @@ from .utils import generate_agent_id
 from .config_manager import ConfigManager
 from .agent import Agent
 from .coordinator_agent import Coordinator
+from .prompt_manager import PromptManager, create_prompt_manager
 
 from dotenv import load_dotenv
 import os
@@ -32,8 +33,9 @@ llm_openai = ChatOpenAI(
 from .utils import create_dynamic_model
 
 class AgentManager:
-    def __init__(self, config_manager: ConfigManager, llm):
+    def __init__(self, config_manager: ConfigManager, prompt_manager: PromptManager, llm):
         self.config_manager = config_manager
+        self.prompt_manager = prompt_manager
         self.org_agents: List[Agent] = []
         self.ext_agents: List[Agent] = []
         self.coordinator: Coordinator = None
@@ -126,7 +128,8 @@ class AgentManager:
         self.coordinator = Coordinator(
             process_summary=process_summary,
             llm=self.llm,
-            conventions=', '.join(conventions)
+            conventions=', '.join(conventions),
+            handoff_fewshots=self.prompt_manager.get_fewshots('coordinator_handoff')
         )
     
     

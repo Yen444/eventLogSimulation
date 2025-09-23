@@ -16,19 +16,19 @@ llm_high = ChatGoogleGenerativeAI(model='gemini-2.0-flash', temperature=1.0)
 def main():
     from simulation_src import SimulationEngine
 
-    
-    """simulation_config_path = './configs/configs_car_insurance_claim.json'
-    log_path = './logs/car_insurance_claim.csv'
-    protocol_path = './protocols/car_insurance_claim.csv'"""
 
     simulation_config_path = './configs/config_p2p_3WayMatchingEC.json'
-    log_path = './logs/p2p_3WayMatchingEC.csv'
-    protocol_path = './protocols/p2p_3WayMatchingEC.csv'
+    log_path = './logs/p2p_3WayMatchingEC_fewshots.csv'
+    protocol_path = './protocols/p2p_3WayMatchingEC_fewshots.csv'
+
+    # write arrivals to csv file
+    # Version 0: female resource takes more time
+    # Version 01: male resource takes more time than female, invoice should be cleared at least one week after the corresponding goods receipt has been recorded.
 
     start_time = '2018-01-01T00:00:00+00:00'
-    num_traces = 100
+    num_traces = 10
 
-    #P2P cleaned process
+    # P2P cleaned process
 
     # Average requests per month (index 0 = Jan)
     monthly_rates = [3.500000, 7.500000, 5.500000, 4.333333, 3.916667, 5.750000, 
@@ -54,7 +54,6 @@ def main():
                                  base_rate=BASE_RATE_HOUR,
                                  max_events=num_traces)
     
-    #write arrivals to csv file
     with open('./logs/arrivals_p2p_3WayMatchingEC.csv', 'w') as f:
         f.write('timestamp,lamda\n')
         for arrival in arrivals:
@@ -62,9 +61,6 @@ def main():
 
     simulation_engine = SimulationEngine(llm=llm_mid, config_path=simulation_config_path, log_path=log_path, arrivals=arrivals, protocol_path=protocol_path)
     
-
-    #2018-07-11 10:18:55+00:00
-    #Num traces complete: 342
     simulation_engine.run(
         start_time=start_time,
         num_traces=num_traces,

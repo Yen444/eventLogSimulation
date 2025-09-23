@@ -1,6 +1,8 @@
 from pydantic import BaseModel, Field, create_model
 from typing import List, Dict, Optional, Any
-from langchain_core.prompts import PromptTemplate
+from langchain_core.prompts import PromptTemplate, FewShotPromptTemplate
+
+import json
 
 
 class CoordinatorOutput(BaseModel):
@@ -20,6 +22,7 @@ class Coordinator(BaseModel):
     process_summary: str = Field(description="Summary of the process")
     conventions: str = Field(default="", description="Conventions to follow when assigning agents to tasks")
     llm: Any = Field(default=None, description="LLM for generating responses")
+    handoff_fewshots: List[Dict[str, str]] = Field(default_factory=list, description="Few-shot examples for handoff")
 
     def hand_off(self, process_states, org_agents, external_agents, current_timestamp):
         org_agents_str = '\n'.join([f"ID: {agent.id}; (role: {agent.role}; actions: {agent.actions}; data: {agent.data})" for agent in org_agents])
@@ -75,11 +78,28 @@ class Coordinator(BaseModel):
         Organization_agents: {org_agents}
         External_agents: {external_agents}
         Current_timestamp: {current_timestamp}
+
+        Below are some examples of how to assign agents to tasks basing on given inputs:
         """
+        fewshot_examples = self.handoff_fewshots
+        if fewshot_examples:
+            # example prompt template
+            example_prompt = PromptTemplate(
+                input_variables=["process_summary", "process_states", "organization_agents", "external_agents", "current_timestamp", "conventions", "output"],
+                template="Process_summary: {process_summary}\nProcess_states: {process_states}\nOrganization_agents: {organization_agents}\nExternal_agents: {external_agents}\nCurrent_timestamp: {current_timestamp}\nConventions: {conventions}\nOutput: {output}"
+            )
+            final_prompt = FewShotPromptTemplate(
+                examples=fewshot_examples,
+                example_prompt=example_prompt,
+                input_variables=["process_summary", "process_states", "org_agents", "external_agents", "current_timestamp", "conventions"],
+                prefix=prompt
+            )
+
+        else:
+            final_prompt = PromptTemplate.from_template(prompt)
 
         structured_llm = self.llm.with_structured_output(ListCoordinatorOutput)
-        prompt = PromptTemplate.from_template(prompt)
-        chain = prompt | structured_llm
+        chain = final_prompt | structured_llm
         coordinator_output = chain.invoke({
             "process_summary": self.process_summary,
             "process_states": process_states,

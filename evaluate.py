@@ -6,6 +6,53 @@ from datetime import timedelta
 import pm4py
 from pm4py.statistics.variants.log import get as variants_get
 
+import pandas as pd
+import matplotlib.pyplot as plt
+import re
+
+def check_characteristics(event_log: pd.DataFrame):
+    """
+    Characteristic 1: "Female employees take more time to complete tasks than male employees."
+    Visualize with a boxplot using matplotlib only.
+    """
+
+    # Convert timestamps
+    event_log['start_timestamp'] = pd.to_datetime(event_log['start_time'])
+    event_log['end_timestamp'] = pd.to_datetime(event_log['end_time'])
+
+    # Compute duration in seconds
+    event_log['duration'] = (event_log['end_timestamp'] - event_log['start_timestamp']).dt.total_seconds()
+
+    # Extract gender from agent_data (example: "name: Klaas Jansen, age: 42, gender: Male")
+    def extract_gender(agent_data):
+        if pd.isna(agent_data):
+            return None
+        match = re.search(r'gender:\s*(Male|Female)', agent_data)
+        return match.group(1) if match else None
+    
+    event_log['gender'] = event_log['Resource'].apply(extract_gender)
+
+    # Drop rows without duration or gender
+    df = event_log.dropna(subset=['duration', 'gender'])
+
+    # Prepare data for boxplot
+    male_durations = df[df['gender'] == 'Male']['duration']
+    female_durations = df[df['gender'] == 'Female']['duration']
+
+    # Boxplot
+    plt.figure(figsize=(8,6))
+    plt.boxplot([male_durations, female_durations], tick_labels=['Male', 'Female'])
+    plt.title('Task Duration by Gender')
+    plt.ylabel('Duration (seconds)')
+    plt.xlabel('Gender')
+    plt.show()
+
+    # Print mean durations for reference
+    mean_duration = df.groupby('gender')['duration'].mean()
+    print("Mean duration by gender:\n", mean_duration)
+
+
+    # --- Characteristic 2: Senior employees for high networth SRM ---
 def generate_process_model(log_df, case_id_col, activity_col, timestamp_col, noise_threshold, out_file=None):
     """
     Generate a process model from the log DataFrame.
@@ -75,8 +122,8 @@ def trace_variants(log_df, case_id_col, activity_col, timestamp_col, out_file=No
             for idx, (variant, traces) in enumerate(sorted_variants, start=1):
                 freq = len(traces)
                 f.write(f"Variant #{idx}: {variant}\n")
-                for trace in traces:
-                    f.write(f"  Trace: {trace}\n")
+                #for trace in traces:
+                #    f.write(f"  Trace: {trace}\n")
                 f.write(f"  Frequency: {freq}\n\n")
 
 def preprocess_glog(in_file, num_traces=692):
@@ -115,7 +162,7 @@ def preprocess_glog(in_file, num_traces=692):
             glog[col] = pd.NA
 
     # parse timestamps to UTC and drop invalid rows
-    glog['end_time'] = pd.to_datetime(glog['end_time'], errors='coerce', utc=True)
+    glog['end_time'] = pd.to_datetime(glog['end_time'], errors='coerce', utc=True, format='mixed')
     glog = glog.dropna(subset=['case_id', 'end_time'])
 
     # compute earliest timestamp per case and pick first N cases by start time
@@ -135,6 +182,8 @@ def preprocess_glog(in_file, num_traces=692):
 
     subset_glog = subset_glog.sort_values(by=['case_id', 'end_time']).reset_index(drop=True)
     print(len(subset_glog['case_id'].unique()), 'cases in the generated log')
+    # replace activity "srm: in transfer to execution system" with "srm: in transfer to execution system"
+    subset_glog['Activity'] = subset_glog['Activity'].str.replace("srm: in transfer to execution system", "srm: in transfer to execution syst.", regex=False)
     return subset_glog
 
 
@@ -189,12 +238,12 @@ def process_rlog(in_file, num_traces):
 
 def main():
     # Preprocess generated log
-    in_file_glog = './logs/p2p_3WayMatchingEC.csv' #'./real_event_logs/BPIChallenge2019_3WayMatchingEC_cleaned.csv' #
-    gen_log = preprocess_glog(in_file=in_file_glog, num_traces=100)
+    in_file_glog = './logs/p2p_3WayMatchingEC_01.csv' #'./real_event_logs/BPIChallenge2019_3WayMatchingEC_cleaned.csv' #
+    gen_log = preprocess_glog(in_file=in_file_glog, num_traces=500)
 
     # Preprocess real log
-    in_file_rlog = './real_event_logs/BPIChallenge2019_3WayMatchingEC_cleaned.csv' #_cleaned
-    real_log = process_rlog(in_file=in_file_rlog, num_traces=100)
+    in_file_rlog = './real_event_logs/BPIChallenge2019_3WayMatchingEC.csv' #_cleaned
+    real_log = process_rlog(in_file=in_file_rlog, num_traces=500)
 
 
     # Calculate metrics basing on the log-distance measures
@@ -208,6 +257,7 @@ def main():
 
     real_log[event_log_ids.end_time] = pd.to_datetime(real_log[event_log_ids.end_time], utc=True)
     real_log[event_log_ids.start_time] = real_log[event_log_ids.end_time] - timedelta(minutes=30)
+    #real_log[event_log_ids.start_time] = pd.to_datetime(real_log[event_log_ids.end_time], utc=True)
 
    
     gen_log[event_log_ids.end_time] = pd.to_datetime(
@@ -215,7 +265,12 @@ def main():
         utc=True,
         format='mixed'  # to sovlve the mixed format issue
     )
-    gen_log[event_log_ids.start_time] = gen_log[event_log_ids.end_time] - timedelta(minutes=30)
+    gen_log[event_log_ids.start_time] = pd.to_datetime(
+        gen_log[event_log_ids.start_time],
+        utc=True,
+        format='mixed'  # to sovlve the mixed format issue
+    )
+    #gen_log[event_log_ids.start_time] = gen_log[event_log_ids.end_time] - timedelta(minutes=30)
 
     from log_distance_measures.config import DEFAULT_CSV_IDS
     from log_distance_measures.control_flow_log_distance import control_flow_log_distance
@@ -231,9 +286,9 @@ def main():
     distance = n_gram_distribution_distance(
         real_log, DEFAULT_CSV_IDS,
         gen_log, DEFAULT_CSV_IDS,
-        n=2
+        n=3
     )
-    print(f'2-gram distribution distance: {distance}')
+    print(f'3-gram distribution distance: {distance}')
 
     from log_distance_measures.absolute_event_distribution import absolute_event_distribution_distance
     from log_distance_measures.config import AbsoluteTimestampType, DEFAULT_CSV_IDS, discretize_to_hour
@@ -306,5 +361,7 @@ def main():
     print(f'Generating trace variants statistics for real log...')
     trace_variants(log_df=real_log, case_id_col='case_id', activity_col='Activity', timestamp_col='end_time', out_file=real_stats_file)
     
+    #check_characteristics(gen_log)
+
 if __name__ == "__main__":
     main()
