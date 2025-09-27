@@ -16,17 +16,12 @@ llm_high = ChatGoogleGenerativeAI(model='gemini-2.0-flash', temperature=1.0)
 def main():
     from simulation_src import SimulationEngine
 
-
-    simulation_config_path = './configs/config_p2p_3WayMatchingEC.json'
-    log_path = './logs/p2p_3WayMatchingEC_fewshots.csv'
-    protocol_path = './protocols/p2p_3WayMatchingEC_fewshots.csv'
-
     # write arrivals to csv file
     # Version 0: female resource takes more time
     # Version 01: male resource takes more time than female, invoice should be cleared at least one week after the corresponding goods receipt has been recorded.
 
     start_time = '2018-01-01T00:00:00+00:00'
-    num_traces = 10
+    num_traces = 500
 
     # P2P cleaned process
 
@@ -59,7 +54,12 @@ def main():
         for arrival in arrivals:
             f.write(f'{arrival[0]},{arrival[1]}\n')
 
-    simulation_engine = SimulationEngine(llm=llm_mid, config_path=simulation_config_path, log_path=log_path, arrivals=arrivals, protocol_path=protocol_path)
+    simulation_config_path = './configs/config_p2p_3WayMatchingEC.json'
+    log_path = './logs/p2p_3WayMatchingEC_fewshots_01.csv'
+    protocol_path = './protocols/p2p_3WayMatchingEC_fewshots_01.csv'
+    db_path = './db'
+
+    simulation_engine = SimulationEngine(llm=llm_mid, config_path=simulation_config_path, log_path=log_path, arrivals=arrivals, protocol_path=protocol_path, db_path=db_path)
     
     simulation_engine.run(
         start_time=start_time,

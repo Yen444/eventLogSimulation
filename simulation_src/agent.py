@@ -1,10 +1,10 @@
 from pydantic import BaseModel, Field, create_model
 from typing import List, Dict, Optional, Any, Type
-from langchain_core.prompts import PromptTemplate
+from langchain_core.prompts import PromptTemplate, FewShotPromptTemplate
 
 
 from .llm_utils import generate_random_text_with_mem_chatbot
-from .utils import generate_agent_id, extract_time_parts
+from .utils import extract_time_parts
 from .config_manager import ConfigManager
 
 from dotenv import load_dotenv
@@ -37,6 +37,7 @@ class Agent(BaseModel):
     role: str = Field(description="Role of the agent")
     data: Optional[str] = Field(default=None, description="Data related to the agent")
     actions: List[str] = Field(default_factory=list, description="List of actions the agent can perform")
+    action_fewshots: List[Dict[str, Any]] = Field(default_factory=list, description="Fewshot examples for the agents taking suitable actions")
 
     def generate_data_onfly(self, organization_context, data_model: BaseModel, llm, reflect=True):
         data_attributes = data_model.model_fields.keys()
@@ -284,15 +285,32 @@ class Agent(BaseModel):
             current_time (str): Current timestamp.
             event_data_attributes (List[str]): List of event data attributes.
             case_data_attributes (List[str]): List of case data attributes.
-            update_interval (str): Update interval in hours.
 
         Returns:
             AgentOutput: Structured output containing the action taken by the agent.
         """
         prompt = self._create_action_prompt()
+        fewshot_examples = self.action_fewshots
+
+        if fewshot_examples:
+            # example prompt template
+            example_prompt = PromptTemplate(
+                input_variables=["role", "data", "actions", "process_summary", "process_state", "action_data_mapping", "event_data_attribute", "case_data_attribute", "conventions", "message", "current_time", "output"],
+                template="Role: {role}\nData: {data}\nActions: {actions}\nProcess Summary: {process_summary}\nProcess State: {process_state}\nAction Data Mapping: {action_data_mapping}\nEvent Data Attributes: {event_data_attribute}\nCase Data Attributes: {case_data_attribute}\nConventions: {conventions}\nMessage: {message}\nCurrent Time: {current_time}\nOutput: {output}\n---\n"
+            )
+            final_prompt = FewShotPromptTemplate(
+                examples=fewshot_examples,
+                example_prompt=example_prompt,
+                input_variables=["process_summary", "process_state", "action_data_mapping", "event_data_attribute", "case_data_attribute", "conventions", "message", "current_time"],
+                prefix=prompt
+            )
+
+        else:
+            final_prompt = PromptTemplate.from_template(prompt)
+
+
         structured_llm = llm.with_structured_output(output_model)
-        prompt = PromptTemplate.from_template(prompt)
-        chain = prompt | structured_llm
+        chain = final_prompt | structured_llm
         agent_outputs = chain.invoke({
             "process_summary": process_summary,
             "process_state": process_state,
@@ -300,7 +318,6 @@ class Agent(BaseModel):
             "current_time": current_time,
             "event_data_attributes": "; ".join(f"{k} → {v}" for k, v in event_data_attributes.items()),
             "case_data_attributes": '; '.join(f"{k} → {v}" for k, v in case_data_attributes.items()),
-            "update_interval": update_interval,
             "message": message,
             "conventions":  '; '.join(conventions)
         })

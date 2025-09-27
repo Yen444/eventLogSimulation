@@ -8,7 +8,7 @@ import json
 from pydantic import BaseModel, Field, create_model
 from typing import List, Dict, Optional, Any
 
-def generate_process_id(used_ids:list) -> str:
+def generate_random_process_id(used_ids:list) -> str:
     """
     Generates a unique process ID consisting of 3 letters and 2 digits.
 
@@ -25,7 +25,7 @@ def generate_process_id(used_ids:list) -> str:
         if process_id not in used_ids:
             return process_id
 
-def generate_agent_id(used_ids:list) -> str:
+def generate_random_agent_id(used_ids:list) -> str:
     """
     Generates a unique Agent ID consisting of 5 digits.
 

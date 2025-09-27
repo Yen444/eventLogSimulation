@@ -4,11 +4,12 @@ from langchain_core.prompts import PromptTemplate
 
 
 from .llm_utils import generate_random_text_with_mem_chatbot
-from .utils import generate_agent_id
+from .utils import generate_random_agent_id
 from .config_manager import ConfigManager
 from .agent import Agent
 from .coordinator_agent import Coordinator
 from .prompt_manager import PromptManager, create_prompt_manager
+from .tinydb_store import TinyDBStore
 
 from dotenv import load_dotenv
 import os
@@ -33,13 +34,14 @@ llm_openai = ChatOpenAI(
 from .utils import create_dynamic_model
 
 class AgentManager:
-    def __init__(self, config_manager: ConfigManager, prompt_manager: PromptManager, llm):
+    def __init__(self, config_manager: ConfigManager, prompt_manager: PromptManager, llm, process_manager=None):
         self.config_manager = config_manager
         self.prompt_manager = prompt_manager
+        self.llm = llm
+        self.process_manager = process_manager
+        self.coordinator = None
         self.org_agents: List[Agent] = []
         self.ext_agents: List[Agent] = []
-        self.coordinator: Coordinator = None
-        self.llm = llm
         self._create_dynamic_models()
 
     def _create_dynamic_models(self):
@@ -86,12 +88,13 @@ class AgentManager:
         for agent_role, actions in role_actions.items():
             num_agents = agent_numbers.get(agent_role, 1)
             for _ in range(num_agents):
-                used_ids = [agent.id for agent in self.org_agents] + [agent.id for agent in self.ext_agents]
-                agent_id = generate_agent_id(used_ids=used_ids)
+                used_ids = self.process_manager.store.get_all_agent_ids() if self.process_manager else []
+                agent_id = generate_random_agent_id(used_ids=used_ids)
                 agent = Agent(
                     id=agent_id,
                     role=agent_role,
-                    actions=actions
+                    actions=actions,
+                    action_fewshots=self.prompt_manager.get_fewshots('agent_action')
                 )
                 
                 agent.generate_data(data_model=self.ResourceData, llm=self.llm, organization_context=organization_context, org_agents=org_agents)
@@ -99,8 +102,14 @@ class AgentManager:
                 #print(agent.data)
                 # append to organization agents
                 org_agents += f'{agent.data}, role: {agent_role}\n'
-                
                 self.org_agents.append(agent)
+                
+                # register org agent in DB if process_manager provided
+                try:
+                    if self.process_manager:
+                        self.process_manager.store.register_org_agent(agent)
+                except Exception:
+                    pass
 
     def create_ext_agent_onfly(self, role:str):
         """Create agents on the fly based on the configurations or handoff"""
@@ -109,15 +118,22 @@ class AgentManager:
         organization_context = simulation_configs.get('organization_summary', '')
         
         used_ids = [agent.id for agent in self.org_agents] + [agent.id for agent in self.ext_agents]
-        agent_id = generate_agent_id(used_ids=used_ids)
+        agent_id = generate_random_agent_id(used_ids=used_ids)
         actions = role_actions.get(role, [])
         agent = Agent(
             id=agent_id,
             role=role,
-            actions=actions
+            actions=actions,
+            action_fewshots=self.prompt_manager.get_fewshots('agent_action')
         )
         agent.generate_data_onfly(data_model=self.ResourceData, llm=self.llm, organization_context=organization_context)
         self.ext_agents.append(agent)
+        # register external agent in DB if process_manager provided
+        try:
+            if self.process_manager:
+                self.process_manager.store.register_ext_agent(agent)
+        except Exception:
+            pass
         return agent
     
     def create_coordinator_agent(self):
@@ -125,16 +141,18 @@ class AgentManager:
         simulation_configs = self.config_manager.configs
         process_summary = simulation_configs.get('process_summary', '')
         conventions = simulation_configs.get('conventions', [])
-        self.coordinator = Coordinator(
+        coordinator = Coordinator(
+            id=generate_random_agent_id(used_ids=self.process_manager.store.get_all_agent_ids() if self.process_manager else []),
             process_summary=process_summary,
             llm=self.llm,
             conventions=', '.join(conventions),
             handoff_fewshots=self.prompt_manager.get_fewshots('coordinator_handoff')
         )
+        self.coordinator = coordinator
+        # register coordinator in DB if process_manager provided
+        self.process_manager.store.register_coordinator(coordinator)
     
     
     def get_agent_by_id(self, agent_id: str):
         """Get an agent by its ID."""
-        for agent in self.org_agents + self.ext_agents:
-            if agent.id == agent_id:
-                return agent
+        return self.process_manager.store.get_agent_by_id(agent_id) if self.process_manager else None

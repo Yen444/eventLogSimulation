@@ -122,8 +122,8 @@ def trace_variants(log_df, case_id_col, activity_col, timestamp_col, out_file=No
             for idx, (variant, traces) in enumerate(sorted_variants, start=1):
                 freq = len(traces)
                 f.write(f"Variant #{idx}: {variant}\n")
-                #for trace in traces:
-                #    f.write(f"  Trace: {trace}\n")
+                for trace in traces:
+                    f.write(f"  Trace: {trace}\n")
                 f.write(f"  Frequency: {freq}\n\n")
 
 def preprocess_glog(in_file, num_traces=692):
@@ -238,7 +238,7 @@ def process_rlog(in_file, num_traces):
 
 def main():
     # Preprocess generated log
-    in_file_glog = './logs/p2p_3WayMatchingEC_01.csv' #'./real_event_logs/BPIChallenge2019_3WayMatchingEC_cleaned.csv' #
+    in_file_glog = './logs/p2p_3WayMatchingEC_fewshots_01.csv' #'./real_event_logs/BPIChallenge2019_3WayMatchingEC_cleaned.csv' #
     gen_log = preprocess_glog(in_file=in_file_glog, num_traces=500)
 
     # Preprocess real log

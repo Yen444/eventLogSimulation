@@ -18,6 +18,7 @@ class ListCoordinatorOutput(BaseModel):
 
 class Coordinator(BaseModel):
     """Coordinator Agent for managing processes and agents"""
+    id: str = Field(description="Unique identifier for the coordinator")
     role: str = "coordinator"
     process_summary: str = Field(description="Summary of the process")
     conventions: str = Field(default="", description="Conventions to follow when assigning agents to tasks")

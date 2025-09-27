@@ -24,6 +24,30 @@
         }
     },
     {
+        "role": "Supervisor",
+        "data": "name: Stefan Hash, age: 52, gender: male",
+        "actions": "Review request, Approve request, Reject request",
+        "process_summary": "The process begins with the employer submitting a request. The supervisor reviews the request and decides whether it is rejected or approved.",
+        "process_state": "",
+        "action_data_mapping": "submit request → request_type, request_date, request_reason",
+        "event_data_attribute": "task_difficulty → Difficulty of the task, rated from 1 to 5; task_duration → Estimated duration of the task in hours; satisfaction → Satisfaction level with the task, rated from 1 to 5",
+        "case_data_attribute": "",
+        "conventions": "Male employers takes more time to complete the task than female employers.",
+        "message": "Review the request",
+        "current_time": "2024-11-05T11:10:00+00:00",
+        "output": {
+            "reasoning": "I am asked to review the request. This action is within my allowed actions. However, the process state is empty, which means the request has not been submitted yet. Therefore, I cannot proceed with the review. I will not take any action at this moment.",
+            "process_id": "",
+            "action": "",
+            "start_timestamp": "",
+            "end_timestamp": "",
+            "case_data": "",
+            "event_data": "",
+            "end_action": "",
+            "message": "No taken action because the request has not been submitted yet."
+        }
+    },
+    {
         "role": "Notification Department",
         "data": "name: Jina Clown, age: 30, gender: female",
         "actions": "Check Documentation, Register Claim",

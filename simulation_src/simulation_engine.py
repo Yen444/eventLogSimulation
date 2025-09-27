@@ -4,7 +4,7 @@ from langchain_core.prompts import PromptTemplate
 from .agent import Agent
 from .agent_manager import AgentManager
 from .config_manager import ConfigManager
-from .process_manager import ProcessManager, logEvent
+from .process_manager_db import ProcessManagerDB, logEvent
 from .prompt_manager import create_prompt_manager
 
 from collections import OrderedDict
@@ -36,12 +36,14 @@ llm_openai = ChatOpenAI(
 
 
 class SimulationEngine:
-    def __init__(self, llm, config_path, log_path, protocol_path, arrivals):
+    def __init__(self, llm, config_path, log_path, protocol_path, db_path, arrivals):
         self.config_manager = ConfigManager(config_path=config_path)
         # create a PromptManager and pass it to AgentManager
         prompt_manager = create_prompt_manager()
         self.agent_manager = AgentManager(self.config_manager, prompt_manager, llm)
-        self.process_manager = ProcessManager(log_path)
+        self.process_manager = ProcessManagerDB(log_path, db_path)
+        # give agent_manager access to the process_manager so it can register agents
+        self.agent_manager.process_manager = self.process_manager
 
         self.protocol_path = protocol_path
         self.llm = llm
@@ -74,6 +76,21 @@ class SimulationEngine:
             writer.writerow([combined, timestamp, from_agent, to_agent, process_id, message, process_state])
             # add a blank line after each protocol entry to separate entries visually
             f.write('\n')
+        # Also persist the protocol/handoff entry into the DB store if available
+        try:
+            if hasattr(self, 'process_manager') and self.process_manager is not None:
+                self.process_manager.record_protocol(
+                    iteration_id=combined,
+                    timestamp=timestamp,
+                    from_agent=from_agent,
+                    to_agent=to_agent,
+                    process_id=process_id,
+                    message=message,
+                    process_state=process_state
+                )
+        except Exception:
+            # best-effort: do not interrupt simulation on DB write failure
+            pass
 
     def step(self, agent: Agent, process_id, current_time, update_interval, message, trigger=False, reflect=True, combined_iteration=None):
         """Run a single step of the simulation."""
@@ -83,8 +100,10 @@ class SimulationEngine:
         event_data_attributes = self.config_manager.configs.get('event_attributes')
         case_data_attributes = self.config_manager.configs.get('case_attributes')
         conventions = self.config_manager.configs.get('conventions', [])
+        # last_activities to trigger completion
+        last_activities = self.config_manager.configs.get('last_activities', []) or []
 
-        process_state = self.process_manager.get_related_process(process_id=process_id)
+        process_state = self.process_manager.get_related_process_state(process_id=process_id)
         # Make sure Agent is not None
         if agent is not None:
             # agent takes action
@@ -102,12 +121,22 @@ class SimulationEngine:
                 reflect=reflect,
                 conventions=conventions
             )
-            print(f'Agent takes {len(out.agent_outputs)} actions')
-            if out:
-                multi_output = True if len(out.agent_outputs) > 1 else False
-                if trigger:
-                    process_id = self.process_manager.generate_process_id()
-                    for idx, agent_output in enumerate(out.agent_outputs):
+            # Guard against agent.act returning None or an unexpected value
+            if out is None:
+                print(f'Agent.act returned None for agent {getattr(agent, "id", "unknown")}, skipping actions')
+                return None
+
+            agent_outputs = getattr(out, 'agent_outputs', None)
+            if not agent_outputs:
+                # No outputs to process (either empty list or missing attribute)
+                print(f'Agent {getattr(agent, "id", "unknown")} produced no outputs')
+                return None
+
+            print(f'Agent takes {len(agent_outputs)} actions')
+            multi_output = True if len(agent_outputs) > 1 else False
+            if trigger:
+                process_id = self.process_manager.generate_process_id()
+                for idx, agent_output in enumerate(agent_outputs):
                         # Always create a log_event. If the agent actually performed an action, update process state;
                         # otherwise write an empty-output row to the log file so we can track "no action" decisions.
                         safe_combined = combined_iteration if combined_iteration is not None else f'{self.iteration_id}'
@@ -119,12 +148,12 @@ class SimulationEngine:
                             iteration_id=f'{safe_combined}_{idx}' if multi_output else safe_combined
                         )
                         if agent_output.action is not None:
-                            self.process_manager.update_process(log_event=log_event, last_activities=self.config_manager.configs.get('last_activities', []))
+                            self.process_manager.update_process(log_event=log_event, last_activities=last_activities)
                         else:
                             # write an empty-output row without modifying process instances
-                            self.process_manager._write_to_log_file(log_event)
+                            self.process_manager.write_to_log_file(log_event)
                 else:
-                    for idx, agent_output in enumerate(out.agent_outputs):
+                    for idx, agent_output in enumerate(agent_outputs):
                         # Always create a log_event. Write to process manager if action present; otherwise log empty output row.
                         safe_combined = combined_iteration if combined_iteration is not None else f'{self.iteration_id}'
                         log_event = logEvent(
@@ -135,10 +164,10 @@ class SimulationEngine:
                             iteration_id=f'{safe_combined}_{idx}' if multi_output else safe_combined
                         )
                         if agent_output.action is not None:
-                            self.process_manager.update_process(log_event=log_event, last_activities=self.config_manager.configs.get('last_activities', []))
+                            self.process_manager.update_process(log_event=log_event, last_activities=last_activities)
                         else:
                             # write an empty-output row without modifying process instances
-                            self.process_manager._write_to_log_file(log_event)
+                            self.process_manager.write_to_log_file(log_event)
             
     def run(self, start_time, end_time=None, inter_arrival_time=0, num_traces=None):
         """Run the simulation.
@@ -149,6 +178,11 @@ class SimulationEngine:
         
         print(f'creating coordinator agent')
         self.agent_manager.create_coordinator_agent()
+        # register coordinator in DB so coordinator metadata is persisted
+        try:
+            self.process_manager.register_coordinator(self.agent_manager.coordinator)
+        except Exception:
+            pass
         print(f'creating organization agents')
         self.agent_manager.create_org_agents()
         
@@ -201,7 +235,7 @@ class SimulationEngine:
                             to_agent='',
                             process_id=None,
                             message='',
-                            process_state=self.process_manager.get_related_process(process_id=None),
+                            process_state=self.process_manager.get_related_process_state(process_id=None),
                             combined_iteration=combined_iteration
                         )
                         # consume the earliest arrival for this iteration
@@ -236,7 +270,7 @@ class SimulationEngine:
                             to_agent=agent_role if agent_id is None else agent.id,
                             process_id=process_id,
                             message=message,
-                            process_state=self.process_manager.get_related_process(process_id=process_id),
+                            process_state=self.process_manager.get_related_process_state(process_id=process_id),
                             combined_iteration=combined_iteration
                         )
                     # consume the earliest arrival once per arrival (not per coordinator output)
@@ -248,7 +282,7 @@ class SimulationEngine:
             for i in range(2):
                 sub_iteration = i+1
                 print(f'coordinator hands off the process to the organization or external agents')
-                process_states = self.process_manager.get_incomplete_process_state(current_time=update_current_time)
+                process_states = self.process_manager.get_all_incomplete_process_state(current_time=update_current_time)
                 if process_states == "":
                     update_current_time += (inter_arrival_time/2)
                     print('There is no process to update')
