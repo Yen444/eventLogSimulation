@@ -10,6 +10,7 @@ from .agent import Agent
 from .coordinator_agent import Coordinator
 from .prompt_manager import PromptManager, create_prompt_manager
 from .tinydb_store import TinyDBStore
+from tinydb import where
 
 from dotenv import load_dotenv
 import os
@@ -34,11 +35,12 @@ llm_openai = ChatOpenAI(
 from .utils import create_dynamic_model
 
 class AgentManager:
-    def __init__(self, config_manager: ConfigManager, prompt_manager: PromptManager, llm, process_manager=None):
+    def __init__(self, config_manager: ConfigManager, prompt_manager: PromptManager, llm, store: TinyDBStore = None):
         self.config_manager = config_manager
         self.prompt_manager = prompt_manager
         self.llm = llm
-        self.process_manager = process_manager
+        # store is the TinyDBStore instance used for persistence
+        self.store = store
         self.coordinator = None
         self.org_agents: List[Agent] = []
         self.ext_agents: List[Agent] = []
@@ -76,7 +78,7 @@ class AgentManager:
         return AgentOutput, ListAgentOutput
 
 
-    def create_org_agents(self):
+    def create_register_org_agents(self):
         """Create agents based on the configuration."""
         simulation_configs = self.config_manager.configs
         role_actions = simulation_configs.get('org_role_action', {})
@@ -87,8 +89,35 @@ class AgentManager:
 
         for agent_role, actions in role_actions.items():
             num_agents = agent_numbers.get(agent_role, 1)
+            existing_agents = []
+
+            # --- check existing agents in store ---
+            if self.store:
+                existing_agents = self.store.org_agents.search(where('role') == agent_role)
+                existing_count = len(existing_agents)
+
+                # ensure existing agents are added to in-memory list
+                for existing in existing_agents:
+                    if not any(a.id == existing['id'] for a in self.org_agents):
+                        # reconstruct Agent object from stored data if needed
+                        agent = Agent(
+                            id=existing['id'],
+                            role=existing['role'],
+                            actions=existing.get('actions', []),
+                            action_fewshots=self.prompt_manager.get_fewshots('agent_action')
+                        )
+                        agent.data = existing.get('data', '')
+                        self.org_agents.append(agent)
+                        org_agents += f'{agent.data}, role: {agent_role}\n'
+
+                # reduce number of new agents to create
+                if existing_count >= num_agents:
+                    continue
+                num_agents -= existing_count
+
+            # --- create missing agents ---
             for _ in range(num_agents):
-                used_ids = self.process_manager.store.get_all_agent_ids() if self.process_manager else []
+                used_ids = self.store.get_all_agent_ids() if self.store else []
                 agent_id = generate_random_agent_id(used_ids=used_ids)
                 agent = Agent(
                     id=agent_id,
@@ -96,22 +125,25 @@ class AgentManager:
                     actions=actions,
                     action_fewshots=self.prompt_manager.get_fewshots('agent_action')
                 )
-                
-                agent.generate_data(data_model=self.ResourceData, llm=self.llm, organization_context=organization_context, org_agents=org_agents)
 
-                #print(agent.data)
-                # append to organization agents
+                agent.generate_data(
+                    data_model=self.ResourceData,
+                    llm=self.llm,
+                    organization_context=organization_context,
+                    org_agents=org_agents
+                )
+
                 org_agents += f'{agent.data}, role: {agent_role}\n'
                 self.org_agents.append(agent)
-                
-                # register org agent in DB if process_manager provided
+
                 try:
-                    if self.process_manager:
-                        self.process_manager.store.register_org_agent(agent)
+                    if self.store:
+                        self.store.register_org_agent(agent)
                 except Exception:
                     pass
 
-    def create_ext_agent_onfly(self, role:str):
+
+    def create_register_ext_agent_onfly(self, role:str):
         """Create agents on the fly based on the configurations or handoff"""
         simulation_configs = self.config_manager.configs
         role_actions = simulation_configs.get('ext_role_actions', {})
@@ -130,19 +162,32 @@ class AgentManager:
         self.ext_agents.append(agent)
         # register external agent in DB if process_manager provided
         try:
-            if self.process_manager:
-                self.process_manager.store.register_ext_agent(agent)
+            if self.store:
+                self.store.register_ext_agent(agent)
         except Exception:
             pass
         return agent
     
-    def create_coordinator_agent(self):
+    def create_register_coordinator_agent(self):
         """Create a coordinator agent"""
+        # check if coordinator already exists in db, if so, load it to memory
+        # TinyDB Table.count() requires a condition argument; use .all() and len() here
+        if self.store and len(self.store.coordinators.all()) > 0:
+            existing = self.store.coordinators.all()[0]
+            self.coordinator = Coordinator(
+                id=existing.get('id'),
+                process_summary=existing.get('process_summary', ''),
+                llm=self.llm,
+                conventions=existing.get('conventions', ''),
+                handoff_fewshots=self.prompt_manager.get_fewshots('coordinator_handoff')
+            )
+            return
+        
         simulation_configs = self.config_manager.configs
         process_summary = simulation_configs.get('process_summary', '')
         conventions = simulation_configs.get('conventions', [])
         coordinator = Coordinator(
-            id=generate_random_agent_id(used_ids=self.process_manager.store.get_all_agent_ids() if self.process_manager else []),
+            id=generate_random_agent_id(used_ids=self.store.get_all_agent_ids() if self.store else []),
             process_summary=process_summary,
             llm=self.llm,
             conventions=', '.join(conventions),
@@ -150,9 +195,24 @@ class AgentManager:
         )
         self.coordinator = coordinator
         # register coordinator in DB if process_manager provided
-        self.process_manager.store.register_coordinator(coordinator)
+        if self.store:
+            self.store.register_coordinator(coordinator)
     
     
     def get_agent_by_id(self, agent_id: str):
         """Get an agent by its ID."""
-        return self.process_manager.store.get_agent_by_id(agent_id) if self.process_manager else None
+        # Prefer the persistent store if available
+        try:
+            if self.store:
+                agent = self.store.get_agent_by_id(agent_id)
+                if agent:
+                    return agent
+        except Exception:
+            # fall back to in-memory search
+            pass
+
+        # Fallback: search in-memory org and external agents
+        for a in self.org_agents + self.ext_agents:
+            if getattr(a, 'id', None) == agent_id:
+                return a
+        return None

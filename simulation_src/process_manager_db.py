@@ -29,54 +29,43 @@ class ProcessManagerDB:
     JSON file (alongside the CSV log) which stores agents, coordinators,
     processes and events in a human-readable format.
     """
-    def __init__(self, log_path, db_path):
-        # in-memory structures removed — use the persistent TinyDB store instead
-        self.num_complete_processes = 0
+    def __init__(self, log_path, store: TinyDBStore = None):
+        """Initialize ProcessManagerDB.
+
+        If a `store` (TinyDBStore) is provided, it will be used. Otherwise a new
+        TinyDBStore will be created from `db_path`.
+        """
         self.log_path = log_path
-        # open for writing and create the log file if it does not exist
+        self.store = store
+
+        # Ensure log file exists
         if not os.path.exists(self.log_path):
             os.makedirs(os.path.dirname(self.log_path), exist_ok=True)
             with open(self.log_path, 'w', encoding='utf-8') as f:
                 f.write("")
-
-        # TinyDBStore stored alongside the csv log by default (JSON file)
-        self.store = TinyDBStore(db_path)
-
-        # initialize completed traces counter from DB
-        try:
-            self.num_complete_processes = 0
-        except Exception:
-            self.num_complete_processes = 0
 
     def record_protocol(self, iteration_id: str, timestamp: str, from_agent: str, to_agent: str, process_id: Optional[str], message: str, process_state: str = ""):
         """Record a handoff/protocol entry into the underlying DB store.
 
         This mirrors the CSV protocol file but stores it in the TinyDB `handoff_protocols` table.
         """
-        try:
-            handoff = {
-                'iteration_id': iteration_id,
-                'timestamp': timestamp if isinstance(timestamp, str) else str(timestamp),
-                'from_agent': from_agent,
-                'to_agent': to_agent,
-                'process_id': process_id,
-                'message': message,
-                'process_state': process_state,
-            }
-            self.store.insert_handoff(handoff)
-        except Exception:
-            # don't fail the simulation if DB write fails
-            pass
-
+        handoff = {
+            'iteration_id': iteration_id,
+            'timestamp': timestamp,
+            'from_agent': from_agent,
+            'to_agent': to_agent,
+            'process_id': process_id,
+            'message': message,
+            'process_state': process_state,
+        }
+        self.store.insert_handoff(handoff)
 
     def write_to_log_file(self, log_event: logEvent):
         """Write log event to the log file."""
         # open the log file in append mode and write a header if empty
         def data2string(data):
-            if data:
-                return ', '.join([f'{k}: {v}' for k, v in data.model_dump().items()])
-            else:
-                return ""
+            return ', '.join([f'{k}: {v}' for k, v in data.model_dump().items()]) if data else ""
+
         # ensure header includes iteration_id; write rows appended
         # use newline='' to avoid extra blank lines on Windows
         with open(self.log_path, 'a', newline='', encoding='utf-8') as f:
@@ -86,8 +75,6 @@ class ProcessManagerDB:
             # if the file is empty, write header first
             if f.tell() == 0:
                 writer.writeheader()
-                # add a blank line after the header to separate header from data
-                f.write('\n')
             writer.writerow({
                 "iteration_id": log_event.iteration_id,
                 "process_id": log_event.process_id,
@@ -100,57 +87,108 @@ class ProcessManagerDB:
                 "event_data": data2string(log_event.event.event_data),
                 "case_data": data2string(log_event.event.case_data),
                 "message": log_event.event.message,
-                "end_action": log_event.event.end_action
+                "end_action": log_event.event.end_action,
+                "process_state": log_event.process_state
             })
-            # add a blank line after each log entry to separate entries visually
-            f.write('\n')
-
 
     def record_event(self, log_event: logEvent):
         """Record an event into the in-memory DB and persist it.
-
-        The stored event is a JSON-friendly dict with key metadata and stringified data fields.
         """
-        def model_to_dict(m):
-            try:
-                return m.model_dump() if hasattr(m, "model_dump") else m
-            except Exception:
-                return str(m)
-
+        def safe_str(value):
+            """Convert any value to a safe string representation."""
+            if value is None:
+                return ""
+            if isinstance(value, str):
+                return value
+            if isinstance(value, (int, float, bool)):
+                return str(value)
+            if isinstance(value, datetime):
+                return value.isoformat()  # standardized, reversible
+            if isinstance(value, (list, dict)):
+                try:
+                    # Try JSON serialization for dicts, lists, etc.
+                    return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+                except (TypeError, ValueError):
+                    # Fallback for unknown objects
+                    return str(value)
+            return str(value)
+        def safe_get(obj, attr):
+            return getattr(obj, attr, None) if obj else None
         evt = {
-            "process_id": log_event.process_id,
-            "action": getattr(log_event.event, "action", None),
-            "agent_id": getattr(log_event.agent, "id", None),
-            "start_timestamp": getattr(log_event.event, "start_timestamp", None),
-            "end_timestamp": getattr(log_event.event, "end_timestamp", None),
-            "event_data": model_to_dict(getattr(log_event.event, "event_data", None)),
-            "case_data": model_to_dict(getattr(log_event.event, "case_data", None)),
-            "message": getattr(log_event.event, "message", None),
-            "end_action": getattr(log_event.event, "end_action", None)
+            "process_id": safe_str(safe_get(log_event, "process_id")),
+            "action": safe_str(safe_get(log_event.event, "action")),
+            "agent_id": safe_str(safe_get(log_event.agent, "id")),
+            "start_timestamp": safe_str(safe_get(log_event.event, "start_timestamp")),
+            "end_timestamp": safe_str(safe_get(log_event.event, "end_timestamp")),
+            "event_data": safe_str(safe_get(log_event.event, "event_data")),
+            "case_data": safe_str(safe_get(log_event.event, "case_data")),
+            "message": safe_str(safe_get(log_event.event, "message")),
+            "end_action": safe_get(log_event.event, "end_action")
         }
-
-        # insert via TinyDBStore which also merges case data into processes
-        try:
-            self.store.insert_event(evt)
-            self.store.insert_process_data(log_event.process_id, {"data": model_to_dict(log_event.event.case_data) if log_event.event.case_data else {}})
-        except Exception:
-            # fallback: ignore DB errors to avoid breaking simulation
-            pass
+        self.store.insert_event(evt)
 
     def update_process(self, log_event: logEvent, last_activities: List[str]):
         """Add a log event and update the process instance."""
-        # If there's no process_id we don't manage a process instance here
-        if log_event.process_id is None:
+        # If there's no process_id (None or empty) we don't manage a process instance here
+        if not getattr(log_event, 'process_id', None):
             return
 
         # write CSV log
         self.write_to_log_file(log_event)
 
-        # persist the event to the DB/store (TinyDB) which also merges case data into processes
+        # persist the event to the DB/store (TinyDB)
+        self.record_event(log_event)
+
+        # Ensure a process record exists (or is updated) in the store so that
+        # incomplete processes are discoverable. Merge case data into process.data
         try:
-            self.record_event(log_event)
+            pid = log_event.process_id
+
+            def _extract_case_data(case_data):
+                if case_data is None:
+                    return {}
+                if hasattr(case_data, 'model_dump'):
+                    try:
+                        return case_data.model_dump()
+                    except Exception:
+                        pass
+                if isinstance(case_data, dict):
+                    return case_data
+                if isinstance(case_data, str):
+                    try:
+                        return json.loads(case_data)
+                    except Exception:
+                        pass
+                return {}
+
+            case_data = _extract_case_data(getattr(log_event.event, 'case_data', None))
+
+            existing_proc = None
+            try:
+                existing_proc = self.store.get_process(pid)
+            except Exception:
+                existing_proc = None
+
+            existing_data = existing_proc.get('data', {}) if existing_proc else {}
+            merged_data = {**existing_data, **case_data} if isinstance(existing_data, dict) else case_data
+
+            last_ts = getattr(log_event.event, 'end_timestamp', None) or getattr(log_event.event, 'start_timestamp', None)
+
+            proc_record = {
+                'data': merged_data,
+                'last_event_timestamp': last_ts,
+                # completed flag will be set separately when end action occurs
+                'completed': False
+            }
+
+            if hasattr(self.store, 'upsert_process'):
+                self.store.upsert_process(pid, proc_record)
+            else:
+                # fallback: only insert if not present
+                if not existing_proc:
+                    self.store.insert_process_data(pid, proc_record)
         except Exception:
-            # best-effort: do not interrupt the simulation on DB write failure
+            # don't let DB issues interrupt the simulation
             pass
 
         # if this event ends the process (either explicit end_action or an action in last_activities), mark the process completed in the store
@@ -163,14 +201,6 @@ class ProcessManagerDB:
                 self.store.mark_process_completed(process_id)
             except Exception:
                 pass
-
-        # recompute completed traces count from the DB
-        try:
-            self.num_complete_processes = self.store.get_num_completed_processes()
-            if self.num_complete_processes > 0:
-                print(f'Num traces complete: {self.num_complete_processes}')
-        except Exception:
-            pass
 
     # generating process id if trigger event happens
 
@@ -216,26 +246,18 @@ class ProcessManagerDB:
         # iterate all processes stored in DB
         # TinyDB does not have a direct table iterator method that returns primary key,
         # so read all processes
-        try:
-            all_procs = self.store.get_incomplete_processes()
-        except Exception:
-            all_procs = []
-
+        all_procs = self.store.get_incomplete_processes()
         for proc in all_procs:
             pid = proc.get('process_id')
             events = self.store.get_events_for_process(pid)
-            if not events:
-                continue
+            
             last_event = events[-1]
             last_timestamp = last_event.get('end_timestamp')
-            try:
-                if last_timestamp and datetime.fromisoformat(last_timestamp) <= current_time:
-                    actions_with_timestamps = [f"{e.get('action') or e.get('message') or 'unknown'} at {e.get('end_timestamp', '')}" for e in events]
-                    actions_str = ', '.join(actions_with_timestamps) if actions_with_timestamps else 'No actions taken so far'
-                    process_state = f"Process ID: {pid}, Last Actions: {actions_str}, Process Data: {proc.get('data', {})}"
-                    process_state_lines.append(process_state)
-            except Exception:
-                # skip processes with bad timestamps
-                continue
+        
+            if last_timestamp and datetime.fromisoformat(last_timestamp) <= current_time:
+                actions_with_timestamps = [f"{e.get('action') or e.get('message') or 'unknown'} at {e.get('end_timestamp', '')}" for e in events]
+                actions_str = ', '.join(actions_with_timestamps) if actions_with_timestamps else 'No actions taken so far'
+                process_state = f"Process ID: {pid}, Last Actions: {actions_str}, Process Data: {proc.get('data', {})}"
+                process_state_lines.append(process_state)
 
         return '\n'.join(process_state_lines)

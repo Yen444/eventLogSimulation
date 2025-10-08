@@ -99,9 +99,9 @@ class Coordinator(BaseModel):
         else:
             final_prompt = PromptTemplate.from_template(prompt)
 
-        structured_llm = self.llm.with_structured_output(ListCoordinatorOutput)
-        chain = final_prompt | structured_llm
-        coordinator_output = chain.invoke({
+        structured_llm = self.llm.with_structured_output(ListCoordinatorOutput) #
+        chain = final_prompt | self.llm
+        raw_output = chain.invoke({
             "process_summary": self.process_summary,
             "process_states": process_states,
             "org_agents": org_agents_str,   
@@ -109,7 +109,8 @@ class Coordinator(BaseModel):
             "current_timestamp": current_timestamp,
             'conventions':  self.conventions
         })
-        return coordinator_output
+        coordinator_output = structured_llm.invoke(raw_output.content)
+        return raw_output, coordinator_output
         
         
         

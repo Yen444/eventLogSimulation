@@ -8,6 +8,7 @@ from tinydb.storages import JSONStorage
 from tinydb.middlewares import CachingMiddleware
 
 import random
+import datetime
 
 
 class TinyDBStore:
@@ -40,6 +41,7 @@ class TinyDBStore:
 
     def register_org_agent(self, agent: Agent):
         agent = agent.model_dump()
+        agent = self._sanitize(agent)
         existing = self.org_agents.get(where('id') == agent.get('id'))
         if existing:
             self.org_agents.update(agent, where('id') == agent.get('id'))
@@ -49,6 +51,7 @@ class TinyDBStore:
     
     def register_ext_agent(self, agent: Agent):
         agent = agent.model_dump()
+        agent = self._sanitize(agent)
         existing = self.ext_agents.get(where('id') == agent.get('id'))
         if existing:
             self.ext_agents.update(agent, where('id') == agent.get('id'))
@@ -58,6 +61,7 @@ class TinyDBStore:
 
     def register_coordinator(self, coordinator: Coordinator):
         coordinator = coordinator.model_dump(mode='json')
+        coordinator = self._sanitize(coordinator)
         self.coordinators.insert(coordinator)
         self.flush()
         print(f"Registering coordinator with ID: {coordinator.get('id')}")
@@ -67,19 +71,45 @@ class TinyDBStore:
 
         Returns the TinyDB doc_id for the inserted event.
         """
-        self.events.insert(evt)        
+        evt_sanitized = self._sanitize(evt)
+        doc_id = self.events.insert(evt_sanitized)
         self.flush()
+        return doc_id
     
     def insert_process_data(self, process_id, process_data: Dict[str, Any]) -> Optional[int]:
         """Insert process data into the processes table."""
         try:
-            self.processes.insert({'process_id': process_id, **process_data})
+            doc_id = self.processes.insert(self._sanitize({'process_id': process_id, **process_data}))
             self.flush()
+            return doc_id
+        except Exception:
+            return None
+
+    def upsert_process(self, process_id: str, process_data: Dict[str, Any]) -> Optional[int]:
+        """Insert or update a process record.
+
+        If a process with `process_id` exists, update it with the provided
+        `process_data`. Otherwise insert a new record. Returns the TinyDB
+        doc_id (or None on failure).
+        """
+        try:
+            existing = self.processes.get(where('process_id') == process_id)
+            record = {'process_id': process_id, **process_data}
+            if existing:
+                # update only the provided keys
+                self.processes.update(self._sanitize(process_data), where('process_id') == process_id)
+                # return existing doc id if present
+                return existing.doc_id if hasattr(existing, 'doc_id') else None
+            else:
+                doc_id = self.processes.insert(self._sanitize(record))
+                self.flush()
+                return doc_id
         except Exception:
             return None
 
     def count_agents(self) -> int:
-        return len(self.agents)
+        # return total number of registered agents (org + external)
+        return len(self.org_agents) + len(self.ext_agents)
     
     def get_all_agent_ids(self) -> List[str]:
         agents = self.org_agents.all() + self.ext_agents.all()
@@ -92,10 +122,12 @@ class TinyDBStore:
         return self.ext_agents.all()
 
     def count_events(self) -> int:
-        return len(self.logging)
+        # count persisted events stored in the 'events' table
+        return len(self.events)
 
     def fetch_one_event(self):
-        all_events = self.logging.all()
+        # return the first persisted event if available
+        all_events = self.events.all()
         return all_events[0] if all_events else None
     
     def get_num_completed_processes(self) -> int:
@@ -104,7 +136,9 @@ class TinyDBStore:
     
     def get_incomplete_processes(self) -> List[str]:
         """Return the list of process IDs that are not completed."""
-        incomplete = self.processes.search((where('completed') != True) | (where('completed').not_exists()))
+        incomplete = self.processes.search(
+            (where('completed') != True) | (~where('completed').exists())
+        )
         return incomplete
     
     def get_process(self, process_id: str) -> Optional[Dict[str, Any]]:
@@ -164,8 +198,9 @@ class TinyDBStore:
         Returns the TinyDB doc_id for the inserted entry.
         """
         try:
-            self.handoffs.insert(handoff)
+            doc_id = self.handoffs.insert(self._sanitize(handoff))
             self.flush()
+            return doc_id
         except Exception:
             return None
 
@@ -187,6 +222,42 @@ class TinyDBStore:
 
     def flush(self):
         self.db.storage.flush()
+
+    def _sanitize(self, obj):
+        """Recursively convert non-JSON-serializable types to serializable ones.
+
+        - datetime -> ISO string
+        - date -> ISO string
+        - timedelta -> total seconds (float)
+        - recursively handle dicts and lists
+        """
+        # Primitive and None types
+        if obj is None:
+            return None
+        if isinstance(obj, (str, int, float, bool)):
+            return obj
+
+        # Datetime / date / timedelta
+        if isinstance(obj, datetime.datetime):
+            return obj.isoformat()
+        if isinstance(obj, datetime.date):
+            return obj.isoformat()
+        if isinstance(obj, datetime.timedelta):
+            return obj.total_seconds()
+
+        # Dict -> sanitize values
+        if isinstance(obj, dict):
+            return {k: self._sanitize(v) for k, v in obj.items()}
+
+        # List / tuple -> sanitize elements
+        if isinstance(obj, (list, tuple)):
+            return [self._sanitize(v) for v in obj]
+
+        # Fallback: convert to string
+        try:
+            return str(obj)
+        except Exception:
+            return None
     def close(self):
         self.flush()
         self.db.close()

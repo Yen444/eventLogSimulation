@@ -7,13 +7,9 @@ load_dotenv()
 
 api_key = os.getenv('GOOGLE_API_KEY')
 
-from langchain_google_genai import ChatGoogleGenerativeAI
-
-llm_low = ChatGoogleGenerativeAI(model='gemini-2.0-flash', temperature=0.0)
-llm_mid = ChatGoogleGenerativeAI(model='gemini-2.0-flash-lite', temperature=0.5) #gemini-2.0-flash-lite #gemini-2.5-pro-preview-03-25
-llm_high = ChatGoogleGenerativeAI(model='gemini-2.0-flash', temperature=1.0)
 
 def main():
+  
     from simulation_src import SimulationEngine
 
     # write arrivals to csv file
@@ -42,30 +38,42 @@ def main():
 
     from simulation_src.utils import simulate_arrivals
 
+    # ensure output directories exist
+    os.makedirs('logs', exist_ok=True)
+    os.makedirs('protocols', exist_ok=True)
+    os.makedirs('db', exist_ok=True)
+
+    # simulate arrivals
     arrivals, inter_arrival_time = simulate_arrivals(start_time=start_time,
                                  monthly_rate=monthly_rates,
                                  weekday_rate=weekday_rates,
                                  hourly_rate=hourly_rates,
                                  base_rate=BASE_RATE_HOUR,
                                  max_events=num_traces)
-    
-    with open('./logs/arrivals_p2p_3WayMatchingEC.csv', 'w') as f:
+
+    arrivals_csv_path = os.path.join('logs', 'arrivals_p2p_3WayMatchingEC.csv')
+    with open(arrivals_csv_path, 'w', encoding='utf-8') as f:
         f.write('timestamp,lamda\n')
         for arrival in arrivals:
             f.write(f'{arrival[0]},{arrival[1]}\n')
 
+    # paths
     simulation_config_path = './configs/config_p2p_3WayMatchingEC.json'
     log_path = './logs/p2p_3WayMatchingEC_fewshots_01.csv'
     protocol_path = './protocols/p2p_3WayMatchingEC_fewshots_01.csv'
     db_path = './db'
 
-    simulation_engine = SimulationEngine(llm=llm_mid, config_path=simulation_config_path, log_path=log_path, arrivals=arrivals, protocol_path=protocol_path, db_path=db_path)
+    # instantiate the LLM lazily to avoid import-time failures
+    try:
+        from langchain_google_genai import ChatGoogleGenerativeAI
+        llm_mid = ChatGoogleGenerativeAI(model='gemini-2.0-flash-lite', temperature=0.5)
+    except Exception:
+        print('Warning: Failed to initialize ChatGoogleGenerativeAI. Make sure required LLM packages and API keys are installed and configured.')
+        raise
     
-    simulation_engine.run(
-        start_time=start_time,
-        num_traces=num_traces,
-        inter_arrival_time=inter_arrival_time
-    )
+    # create and run the simulation engine
+    simulation_engine = SimulationEngine(llm=llm_mid, config_path=simulation_config_path, log_path=log_path, protocol_path=protocol_path, db_path=db_path, arrivals=arrivals)
+    simulation_engine.run(start_time=start_time, num_traces=num_traces, inter_arrival_time=inter_arrival_time)
 
 if __name__ == "__main__":
     main()
