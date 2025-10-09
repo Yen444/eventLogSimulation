@@ -261,3 +261,12 @@ class ProcessManagerDB:
                 process_state_lines.append(process_state)
 
         return '\n'.join(process_state_lines)
+    
+    def get_statistics(self) -> Dict[str, Any]:
+        """Get statistics about the processes and events in the store."""
+        # Get statistics basing on all the case data and events data in terms of processes and events
+        # What kind of statistics would be useful and general given arbitrary process data?
+        # What we may care about is time, resource, event data (arbitrary), case data (arbitrary) in relation to process and activities.
+        # These statistics will be given to llm agent so that it can adapt their output to meet up some biases or criteria, for example, female resources take more time to finish activity rather than male, which statistics can help to define it?
+        
+        stats = {}

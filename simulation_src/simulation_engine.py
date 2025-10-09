@@ -96,6 +96,13 @@ class SimulationEngine:
         except Exception:
             pass
 
+    def _process_arrivals(self, current_time, inter_arrival_time):
+        """Helper function to process arrivals within the current time window."""
+        next_current_time = current_time + inter_arrival_time
+        sub_arrivals = [arrival for arrival in self.arrivals if current_time <= arrival[0] < next_current_time]
+        print(f'Number of arrivals in this updating step: {len(sub_arrivals)}')
+        return sub_arrivals
+
     def _process_agent_outputs(self, agent, agent_outputs, process_state, combined_iteration, trigger, last_activities):
         """Helper function to process agent outputs."""
         multi_output = len(agent_outputs) > 1
@@ -113,8 +120,12 @@ class SimulationEngine:
             else:
                 self.process_manager_db.write_to_log_file(log_event)
 
-    def step(self, agent: Agent, process_id, current_time, update_interval, message, trigger, reflect, combined_iteration=None):
-        """Run a single step of the simulation."""
+    def _step(self, agent: Agent, process_id, current_time, update_interval, message, trigger, reflect, combined_iteration=None):
+        """Run a single step of the simulation.
+
+        This method is intended as an internal helper. Use `run` to drive the
+        full simulation externally. Renamed to `_step` to mark it as internal.
+        """
         process_summary = self.config_manager.configs.get('process_summary', '')
         action_data_mapping = self.config_manager.configs.get('action_data', '')
         event_data_attributes = self.config_manager.configs.get('event_attributes')
@@ -145,13 +156,6 @@ class SimulationEngine:
             print(f"Agent takes {len(out.agent_outputs)} actions")
             self._process_agent_outputs(agent, out.agent_outputs, process_state, combined_iteration, trigger, last_activities)
 
-    def _process_arrivals(self, current_time, inter_arrival_time):
-        """Helper function to process arrivals within the current time window."""
-        next_current_time = current_time + inter_arrival_time
-        sub_arrivals = [arrival for arrival in self.arrivals if current_time <= arrival[0] < next_current_time]
-        print(f'Number of arrivals in this updating step: {len(sub_arrivals)}')
-        return sub_arrivals
-
     def _handle_coordinator_outputs(self, coordinator_outputs, current_time, combined_iteration, trigger):
         """Helper function to handle coordinator outputs."""
         for j, coordinator_output in enumerate(coordinator_outputs.coordinator_outputs):
@@ -168,7 +172,7 @@ class SimulationEngine:
                 raise ValueError("Either agent_id or agent_role must be provided.")
 
             print(f'Trigger agent takes action')
-            self.step(agent=agent, process_id=process_id, current_time=current_time, update_interval=datetime.timedelta(hours=1), message=message, trigger=trigger, combined_iteration=combined_iteration, reflect=False)
+            self._step(agent=agent, process_id=process_id, current_time=current_time, update_interval=datetime.timedelta(hours=1), message=message, trigger=trigger, combined_iteration=combined_iteration, reflect=False)
 
     def run(self, start_time, end_time=None, inter_arrival_time=0, num_traces=None):
         """Run the simulation.
