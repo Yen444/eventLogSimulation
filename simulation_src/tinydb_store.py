@@ -9,7 +9,8 @@ from tinydb.middlewares import CachingMiddleware
 
 import random
 import datetime
-
+import statistics
+import json
 
 class TinyDBStore:
     """Small wrapper around TinyDB for the simulation store.
@@ -261,3 +262,363 @@ class TinyDBStore:
     def close(self):
         self.flush()
         self.db.close()
+    
+    def _parse_stringified_dict(self, raw_data: Any) -> Optional[Dict[str, Any]]:
+        """Helper to parse a stringified dict safely."""
+        if not raw_data:
+            return None
+        try:
+            data = json.loads(raw_data) if isinstance(raw_data, str) else raw_data
+            if isinstance(data, dict):
+                return data
+            return None
+        except Exception:
+            return None
+
+    def get_event_data_stats(self, action: str=None, event_attributes: List[str]=None) -> Dict[str, Any]:
+        """Get statistics about event data per one action or per all actions.
+        
+        The event data is stored in the attribute 'event_data' as a stringified dict.
+        Example: '{"temperature": 20, "duration": 3.5}'
+        """
+        if not event_attributes:
+            return {}
+        try:
+            events = self.events.all()
+            if action:
+                events = [e for e in events if e.get('action') == action]
+            if not events:
+                return {}   
+
+            # Parse event_data (string of dict)
+            data_entries = []
+            for e in events:
+                raw_data = e.get('event_data')
+                if not raw_data:
+                    continue
+                data = self._parse_stringified_dict(raw_data)
+                if data:
+                    data_entries.append(data)
+
+            if not data_entries:
+                return {}
+            # Compute stats for each attribute     
+            stats = {}
+
+            for attr in event_attributes:
+                # Extract all values for this attribute
+                values = [d.get(attr) for d in data_entries if attr in d and d.get(attr) is not None]
+                if not values:
+                    continue
+
+                # Try numeric conversion
+                num_values = []
+                for v in values:
+                    try:
+                        num_values.append(float(v))
+                    except (ValueError, TypeError):
+                        pass
+
+                if len(num_values) == len(values) and num_values:
+                    # Numeric statistics
+                    stats[attr] = {
+                        'count': len(num_values),
+                        'avg': statistics.mean(num_values),
+                        'min': min(num_values),
+                        'max': max(num_values),
+                        'std': statistics.pstdev(num_values) if len(num_values) > 1 else 0.0
+                    }
+                else:
+                    # Categorical statistics
+                    counts = {}
+                    for v in values:
+                        counts[v] = counts.get(v, 0) + 1
+                    stats[attr] = {
+                        'unique_values': len(counts),
+                        'counts': counts
+                    }
+
+            return stats
+
+        except Exception:
+            return {}
+
+    def get_case_data_stats(self, case_attributes: List[str]=None) -> Dict[str, Any]:
+        """Get statistics about case data for all processes.
+
+        The case data is stored in the attribute 'data' as a stringified dict.
+        Example: '{"amount": 5, "year": 3}'
+        """
+        if not case_attributes:
+            return {}
+
+        try:
+            processes = self.processes.all()
+            if not processes:
+                return {}
+
+            # Parse the case data (stringified dict)
+            data_entries = []
+            for p in processes:
+                raw_data = p.get('data')
+                if not raw_data:
+                    continue
+                data = self._parse_stringified_dict(raw_data)
+                if data:
+                    data_entries.append(data)
+
+            if not data_entries:
+                return {}
+
+            stats = {}
+
+            for attr in case_attributes:
+                values = [d.get(attr) for d in data_entries if attr in d and d.get(attr) is not None]
+                if not values:
+                    continue
+
+                # Try numeric conversion
+                num_values = []
+                for v in values:
+                    try:
+                        num_values.append(float(v))
+                    except (ValueError, TypeError):
+                        pass
+
+                if len(num_values) == len(values) and num_values:
+                    stats[attr] = {
+                        'count': len(num_values),
+                        'avg': statistics.mean(num_values),
+                        'min': min(num_values),
+                        'max': max(num_values),
+                        'std': statistics.pstdev(num_values) if len(num_values) > 1 else 0.0
+                    }
+                else:
+                    counts = {}
+                    for v in values:
+                        counts[v] = counts.get(v, 0) + 1
+                    stats[attr] = {
+                        'unique_values': len(counts),
+                        'counts': counts
+                    }
+
+            return stats
+
+        except Exception:
+            return {}
+
+    def get_event_stats_by_resource(self, event_attribute: str, resource_attribute: str, action: str=None) -> Dict[str, Any]:
+        """Get statistics about event data per given action (or all actions) grouped by a resource attribute.
+
+        Example: compute average event duration grouped by resource's experience level.
+        """
+        if not event_attribute or not resource_attribute:
+            return {}
+
+        try:
+            events = self.events.all()
+            if action:
+                events = [e for e in events if e.get('action') == action]
+
+            # group event attribute values by resource attribute value
+            grouped = {}
+
+            for e in events:
+                # --- Extract resource attribute value ---
+                res_id = e.get('agent_id')
+                resource_data_value = None
+                if res_id:
+                    agent = self.get_agent_by_id(res_id)
+                    if agent:
+                        raw_data = agent.get('data')
+                        if raw_data:
+                            data = self._parse_stringified_dict(raw_data)
+                            if data:
+                                resource_data_value = data.get(resource_attribute)
+
+                # --- Extract event attribute value ---
+                event_data_value = None
+                raw_event_data = e.get('event_data')
+                if raw_event_data:
+                    event_data = self._parse_stringified_dict(raw_event_data)
+                    if event_data:
+                        event_data_value = event_data.get(event_attribute)
+
+                # Skip if either is missing
+                if resource_data_value is None or event_data_value is None:
+                    continue
+
+                grouped.setdefault(resource_data_value, []).append(event_data_value)
+
+            if not grouped:
+                return {}
+
+            stats = {}
+
+            for res_value, values in grouped.items():
+                # Try numeric conversion
+                num_values = []
+                for v in values:
+                    try:
+                        num_values.append(float(v))
+                    except (ValueError, TypeError):
+                        pass
+
+                if len(num_values) == len(values) and num_values:
+                    stats[res_value] = {
+                        'count': len(num_values),
+                        'avg': statistics.mean(num_values),
+                        'min': min(num_values),
+                        'max': max(num_values),
+                        'std': statistics.pstdev(num_values) if len(num_values) > 1 else 0.0
+                    }
+                else:
+                    counts = {}
+                    for v in values:
+                        counts[v] = counts.get(v, 0) + 1
+                    stats[res_value] = {
+                        'unique_values': len(counts),
+                        'counts': counts
+                    }
+
+            return stats
+
+        except Exception:
+            return {}
+    
+    def get_resource_data_stats(self, resource_attributes: List[str]=None) -> Dict[str, Any]:
+        """Get statistics about resource data for all org and ext agents.
+
+        The resource data is stored in the attribute 'data' as a stringified dict.
+        Example: '{"experience": 5, "age": 30}'
+        """
+        if not resource_attributes:
+            return {}
+
+        try:
+            agents = self.org_agents.all() + self.ext_agents.all()
+            if not agents:
+                return {}
+
+            # Parse the resource data (stringified dict)
+            data_entries = []
+            for a in agents:
+                raw_data = a.get('data')
+                if not raw_data:
+                    continue
+                data = self._parse_stringified_dict(raw_data)
+                if data:
+                    data_entries.append(data)
+
+            if not data_entries:
+                return {}
+
+            stats = {}
+
+            for attr in resource_attributes:
+                values = [d.get(attr) for d in data_entries if attr in d and d.get(attr) is not None]
+                if not values:
+                    continue
+
+                # Try numeric conversion
+                num_values = []
+                for v in values:
+                    try:
+                        num_values.append(float(v))
+                    except (ValueError, TypeError):
+                        pass
+
+                if len(num_values) == len(values) and num_values:
+                    stats[attr] = {
+                        'count': len(num_values),
+                        'avg': statistics.mean(num_values),
+                        'min': min(num_values),
+                        'max': max(num_values),
+                        'std': statistics.pstdev(num_values) if len(num_values) > 1 else 0.0
+                    }
+                else:
+                    counts = {}
+                    for v in values:
+                        counts[v] = counts.get(v, 0) + 1
+                    stats[attr] = {
+                        'unique_values': len(counts),
+                        'counts': counts
+                    }
+
+            return stats
+
+        except Exception:
+            return {}
+            
+    def get_resource_data_stats_separate(self, resource_attributes: List[str] = None) -> Dict[str, Any]:
+        """Get separate statistics about resource data for org and ext agents.
+
+        Uses the helper `_parse_stringified_dict` to safely parse stored data.
+        Returns a dict with keys 'org_agents' and 'ext_agents'.
+        """
+        if not resource_attributes:
+            return {}
+
+        def parse_agent_data(agent_list):
+            entries = []
+            for a in agent_list:
+                raw_data = a.get('data')
+                if not raw_data:
+                    continue
+                data = self._parse_stringified_dict(raw_data)
+                if data:
+                    entries.append(data)
+            return entries
+
+        def compute_stats(data_entries):
+            if not data_entries:
+                return {}
+
+            stats = {}
+            for attr in resource_attributes:
+                values = [d.get(attr) for d in data_entries if attr in d and d.get(attr) is not None]
+                if not values:
+                    continue
+
+                num_values = []
+                for v in values:
+                    try:
+                        num_values.append(float(v))
+                    except (ValueError, TypeError):
+                        pass
+
+                if len(num_values) == len(values) and num_values:
+                    stats[attr] = {
+                        'count': len(num_values),
+                        'avg': statistics.mean(num_values),
+                        'min': min(num_values),
+                        'max': max(num_values),
+                        'std': statistics.pstdev(num_values) if len(num_values) > 1 else 0.0
+                    }
+                else:
+                    counts = {}
+                    for v in values:
+                        counts[v] = counts.get(v, 0) + 1
+                    stats[attr] = {
+                        'unique_values': len(counts),
+                        'counts': counts
+                    }
+            return stats
+
+        try:
+            org_agents = self.org_agents.all() if hasattr(self.org_agents, 'all') else []
+            ext_agents = self.ext_agents.all() if hasattr(self.ext_agents, 'all') else []
+
+            org_data_entries = parse_agent_data(org_agents)
+            ext_data_entries = parse_agent_data(ext_agents)
+
+            org_stats = compute_stats(org_data_entries)
+            ext_stats = compute_stats(ext_data_entries)
+
+            return {
+                'org_agents': org_stats,
+                'ext_agents': ext_stats
+            }
+
+        except Exception:
+            return {}

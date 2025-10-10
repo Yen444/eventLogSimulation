@@ -33,6 +33,7 @@ llm_openai = ChatOpenAI(
 )
 
 from .utils import create_dynamic_model
+from langchain_core.tools import tool
 
 class AgentManager:
     def __init__(self, config_manager: ConfigManager, prompt_manager: PromptManager, llm, store: TinyDBStore = None):
@@ -77,6 +78,35 @@ class AgentManager:
         
         return AgentOutput, ListAgentOutput
 
+    @tool
+    def get_event_data_stats(self, action: str=None, event_attributes: List[str]=None) -> Dict[str, Any]:
+        """Retrieve statistics about event data per one specific action or per all actions"""
+        if self.store:
+            return self.store.get_event_data_stats(action=action, event_attributes=event_attributes)
+        else:
+            return {}
+    @tool
+    def get_case_data_stats(self, case_attributes: List[str]=None) -> Dict[str, Any]:
+        """Retrieve statistics about case data of all processes"""
+        if self.store:
+            return self.store.get_case_data_stats(case_attributes=case_attributes)
+        else:
+            return {}
+    @tool
+    def get_event_stats_by_resource(self, event_attribute: str, resource_attribute: str, action: str=None) -> Dict[str, Any]:
+        """Retrieve statistics about an event data grouped by a resource attribute per given action or for all given actions
+        """
+        if self.store:
+            return self.store.get_event_stats_by_resource(event_attribute=event_attribute, resource_attribute=resource_attribute, action=action)
+        else:
+            return {}
+    @tool
+    def get_resource_data_stats(self, resource_attributes: List[str]=None) -> Dict[str, Any]:
+        """Retrieve statistics about resource data of all resources"""
+        if self.store:
+            return self.store.get_resource_data_stats(resource_attributes=resource_attributes)
+        else:
+            return {}
 
     def create_register_org_agents(self):
         """Create agents based on the configuration."""
@@ -104,7 +134,9 @@ class AgentManager:
                             id=existing['id'],
                             role=existing['role'],
                             actions=existing.get('actions', []),
-                            action_fewshots=self.prompt_manager.get_fewshots('agent_action')
+                            action_fewshots=self.prompt_manager.get_fewshots('agent_action'),
+                            llm=self.llm,
+                            tools= [self.get_event_data_stats, self.get_case_data_stats, self.get_event_stats_by_resource, self.get_resource_data_stats]
                         )
                         agent.data = existing.get('data', '')
                         self.org_agents.append(agent)
@@ -123,7 +155,9 @@ class AgentManager:
                     id=agent_id,
                     role=agent_role,
                     actions=actions,
-                    action_fewshots=self.prompt_manager.get_fewshots('agent_action')
+                    action_fewshots=self.prompt_manager.get_fewshots('agent_action'),
+                    llm=self.llm,
+                    tools= [self.get_event_data_stats, self.get_case_data_stats, self.get_event_stats_by_resource, self.get_resource_data_stats]
                 )
 
                 agent.generate_data(
@@ -156,7 +190,9 @@ class AgentManager:
             id=agent_id,
             role=role,
             actions=actions,
-            action_fewshots=self.prompt_manager.get_fewshots('agent_action')
+            action_fewshots=self.prompt_manager.get_fewshots('agent_action'),
+            llm=self.llm,
+            tools= [self.get_event_data_stats, self.get_case_data_stats, self.get_event_stats_by_resource, self.get_resource_data_stats]
         )
         agent.generate_data_onfly(data_model=self.ResourceData, llm=self.llm, organization_context=organization_context)
         self.ext_agents.append(agent)
@@ -179,7 +215,8 @@ class AgentManager:
                 process_summary=existing.get('process_summary', ''),
                 llm=self.llm,
                 conventions=existing.get('conventions', ''),
-                handoff_fewshots=self.prompt_manager.get_fewshots('coordinator_handoff')
+                handoff_fewshots=self.prompt_manager.get_fewshots('coordinator_handoff'),
+                tools= [self.get_event_data_stats, self.get_case_data_stats, self.get_event_stats_by_resource, self.get_resource_data_stats]
             )
             return
         
@@ -206,6 +243,12 @@ class AgentManager:
             if self.store:
                 agent = self.store.get_agent_by_id(agent_id)
                 if agent:
+                    # Ensure the returned Agent has the manager's llm and tools wired
+                    try:
+                        agent.llm = self.llm
+                        agent.tools = [self.get_event_data_stats, self.get_case_data_stats, self.get_event_stats_by_resource, self.get_resource_data_stats]
+                    except Exception:
+                        pass
                     return agent
         except Exception:
             # fall back to in-memory search
@@ -214,5 +257,11 @@ class AgentManager:
         # Fallback: search in-memory org and external agents
         for a in self.org_agents + self.ext_agents:
             if getattr(a, 'id', None) == agent_id:
+                # also ensure llm/tools are present
+                try:
+                    a.llm = a.llm or self.llm
+                    a.tools = a.tools or [self.get_event_data_stats, self.get_case_data_stats, self.get_event_stats_by_resource, self.get_resource_data_stats]
+                except Exception:
+                    pass
                 return a
         return None

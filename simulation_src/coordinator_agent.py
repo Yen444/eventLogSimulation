@@ -24,6 +24,7 @@ class Coordinator(BaseModel):
     conventions: str = Field(default="", description="Conventions to follow when assigning agents to tasks")
     llm: Any = Field(default=None, description="LLM for generating responses")
     handoff_fewshots: List[Dict[str, str]] = Field(default_factory=list, description="Few-shot examples for handoff")
+    tools: Optional[List[Any]] = Field(default=None, description="Optional tools for the coordinator")
 
     def hand_off(self, process_states, org_agents, external_agents, current_timestamp):
         org_agents_str = '\n'.join([f"ID: {agent.id}; (role: {agent.role}; actions: {agent.actions}; data: {agent.data})" for agent in org_agents])
@@ -72,6 +73,7 @@ class Coordinator(BaseModel):
             **Maintain Process Integrity:**
                 - Never assign different agents to the same activity within the same process.
                 - Strictly adhere to Process IDs: Each process has a unique state and guidelines. Carefully read Process IDs and their current states to ensure every assignment aligns precisely with that process's specific requirements and general guidelines.
+            **You may have to retrieve suitable statistics in order to fulfill the conventions requirements. However, do not retrieve it everytime, only retrieve it when you think it is necessary.**
 
         Below is the information given to you:
         Process_summary: {process_summary}
@@ -98,9 +100,14 @@ class Coordinator(BaseModel):
 
         else:
             final_prompt = PromptTemplate.from_template(prompt)
+        
+        # Add tools if available
+        if self.tools:
+            llm_with_tools = self.llm.bind_tools(self.tools)
 
-        structured_llm = self.llm.with_structured_output(ListCoordinatorOutput) #
-        chain = final_prompt | self.llm
+        structured_llm = llm_with_tools.with_structured_output(ListCoordinatorOutput) 
+
+        chain = final_prompt | llm_with_tools
         raw_output = chain.invoke({
             "process_summary": self.process_summary,
             "process_states": process_states,
@@ -109,6 +116,8 @@ class Coordinator(BaseModel):
             "current_timestamp": current_timestamp,
             'conventions':  self.conventions
         })
+        for tool_call in raw_output.tool_calls:
+            print(tool_call)
         coordinator_output = structured_llm.invoke(raw_output.content)
         return raw_output, coordinator_output
         

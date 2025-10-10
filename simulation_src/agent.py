@@ -1,3 +1,4 @@
+from pyexpat.errors import messages
 from pydantic import BaseModel, Field, create_model
 from typing import List, Dict, Optional, Any, Type
 from langchain_core.prompts import PromptTemplate, FewShotPromptTemplate
@@ -38,7 +39,9 @@ class Agent(BaseModel):
     data: Optional[str] = Field(default=None, description="Data related to the agent")
     actions: List[str] = Field(default_factory=list, description="List of actions the agent can perform")
     action_fewshots: List[Dict[str, Any]] = Field(default_factory=list, description="Fewshot examples for the agents taking suitable actions")
-
+    llm: Optional[Any] = Field(default=None, description="LLM instance to use for this agent (optional). If not provided, pass llm into methods.")
+    tools: Optional[List[Any]] = Field(default=None, description="Tools the agent can use (optional)")
+    
     def generate_data_onfly(self, organization_context, data_model: BaseModel, llm, reflect=True):
         data_attributes = data_model.model_fields.keys()
         # create string from list of data attributes
@@ -65,8 +68,20 @@ class Agent(BaseModel):
         - ...
         """
 
+        # allow passing llm per-call or use the agent's llm
+        if llm is None:
+            llm = self.llm
+        if llm is None:
+            raise ValueError("No llm provided: pass an llm to generate_data_onfly or set agent.llm")
+
         prompt = PromptTemplate.from_template(sys_prompt)
-        structured_llm = llm.with_structured_output(data_model)
+
+        # Add tools if available
+        if self.tools:
+            llm_with_tools = llm.bind_tools(self.tools)
+
+        structured_llm = llm_with_tools.with_structured_output(data_model)
+
         chain = prompt | structured_llm
         data = chain.invoke({"role": self.role, "data_attributes": data_attributes, "organization_context": organization_context})
         data =  ", ".join(f"{k}: {v}" for k, v in data.model_dump().items())
@@ -113,7 +128,7 @@ class Agent(BaseModel):
         #print(f'First generated data: {data}, role: {self.role}')
         #print(f'Regenerated data: {data_reflect}, role: {self.role}')
 
-    def generate_data(self, organization_context, org_agents, data_model: BaseModel, llm, reflect=True):
+    def generate_data(self, organization_context, org_agents, data_model: BaseModel, llm: Optional[Any] = None, reflect=False):
         data_attributes = data_model.model_fields.keys()
         # create string from list of data attributes
         data_attributes = ', '.join(data_attributes)
@@ -127,12 +142,7 @@ class Agent(BaseModel):
 
         Generate plausible values for the following attributes: {data_attributes}. Ensure the values are internally consistent and appropriate for the given role and organizational context.
 
-        When generating this person's information, take into account the existing members of the organization to avoid unrealistic overlaps. For instance, if there are already two employees named Alice who are 30 years old, avoid adding a third with the same name and age.
-
-        Existing organization members:
-        {org_agents}
-
-        {random_text}
+        When generating this person's information, take into account the existing members of the organization to avoid unrealistic overlaps. For instance, if there are already two employees named Alice who are 30 years old, avoid adding a third with the same name and age. You can retrieve the statistics of existing members from the organizational database.
 
         Return the output in a clearly structured format, listing each attribute and its corresponding value:
         - <attribute>: <value>
@@ -140,8 +150,20 @@ class Agent(BaseModel):
         - ...
         """
 
+        # allow passing llm per-call or use the agent's llm
+        if llm is None:
+            llm = self.llm
+        if llm is None:
+            raise ValueError("No llm provided: pass an llm to generate_data or set agent.llm")
+
         prompt = PromptTemplate.from_template(sys_prompt)
-        structured_llm = llm.with_structured_output(data_model)
+
+        # Add tools if available
+        if self.tools:
+            llm_with_tools = llm.bind_tools(self.tools)
+
+        structured_llm = llm_with_tools.with_structured_output(data_model)
+
         chain = prompt | structured_llm
         data = chain.invoke({"role": self.role, "data_attributes": data_attributes, "organization_context": organization_context, "org_agents": org_agents, "random_text": random_text})
         data =  ", ".join(f"{k}: {v}" for k, v in data.model_dump().items())
@@ -188,9 +210,6 @@ class Agent(BaseModel):
     
         data_reflect = ", ".join(f"{k}: {v}" for k, v in data_reflect.model_dump().items())
         self.data = data_reflect
-        
-        #print(f'First generated data: {data}, role: {self.role}')
-        #print(f'Regenerated data: {data_reflect}, role: {self.role}')
 
     
     def _create_action_prompt(self):
@@ -269,12 +288,39 @@ class Agent(BaseModel):
         **Sometimes you're overloaded with so many other tasks or with your life. If you can't do your assigned task, just specifiy the reason in the message field and leave other fields empty.**
         **Be active: Even if you've only been assigned one action by the coordinator, take the initiative. Based on the process summary, your allowed actions, and the nature of those actions (e.g., quick tasks often performed in sequence), after taking your assigned action, identify and perform any consecutive actions that logically follow. Be proactive—move the process forward when it makes sense.**
         **Be aware: If you've been assigned an activity which you think is not suitable for that process (basing on the process summary and the process state), you can decide to take other action rather than the assigned one (if that action is suitable), or you can choose not to take any action at all.**
+        **You may have to retrieve suitable statistics in order to fulfill the conventions requirements. However, do not retrieve it everytime, only retrieve it when you think it is necessary.**
         """
+    def _create_tool_call_prompt(self):
+        """Create prompt for the agent to call tools"""
+        role = self.role
+        actions = ', '.join(self.actions)
+        data = self.data if self.data else "No data available"
+        prompt = f"""
+            You are an intelligent agent participating in a business process simulation.
 
+            Your objective is to decide which actions to take and whether you need to call any analytical tools to gather information before deciding.  
+
+            Below is your context and task:
+
+            Process Summary: {{process_summary}}  
+            Your Role: {role}  
+            Your Profile: {data}  
+            Available Actions: {actions}  
+            Action Data Mapping: {{action_data_mapping}}  
+            Process State: {{process_state}}  
+            Message from Coordinator: {{message}}  
+            Timestamp: {{current_time}}  
+            Event Data Attributes: {{event_data_attributes}}  
+            Case Data Attributes: {{case_data_attributes}}  
+            Conventions: {{conventions}}
+
+            To fulfill your task effectively, sometimes you may need to call analytical tools to gather necessary statistics or insights. 
+            Using the given tools, and decide if you want to call any of them or not.  
+            """
 
         return prompt
     
-    def _take_action(self, output_model, llm, process_summary: str, process_state: str, action_data_mapping: Dict[str, List[str]], current_time: str, event_data_attributes: List[str], case_data_attributes: List[str], update_interval:str, message: str, conventions: List[str]):
+    def _take_action(self, output_model, llm: Optional[Any], process_summary: str, process_state: str, action_data_mapping: Dict[str, List[str]], current_time: str, event_data_attributes: List[str], case_data_attributes: List[str], message: str, conventions: List[str]):
         """
         Act based on the process summary, process state, action data mapping, current time, event data attributes, and case data attributes.
 
@@ -289,6 +335,12 @@ class Agent(BaseModel):
         Returns:
             AgentOutput: Structured output containing the action taken by the agent.
         """
+        # resolve llm: use passed llm or agent.llm
+        if llm is None:
+            llm = self.llm
+        if llm is None:
+            raise ValueError("No llm provided: pass an llm to act/_take_action or set agent.llm")
+
         prompt = self._create_action_prompt()
         fewshot_examples = self.action_fewshots
 
@@ -308,10 +360,35 @@ class Agent(BaseModel):
         else:
             final_prompt = PromptTemplate.from_template(prompt)
 
+        # Create an llm with tools if available
+        if self.tools:
+            llm_with_tools = llm.bind_tools(self.tools)
+            tool_prompt = self._create_tool_call_prompt()
+            tool_prompt = PromptTemplate.from_template(tool_prompt)
+            tool_chain = tool_prompt | llm_with_tools
+            tool_output = tool_chain.invoke({
+                "process_summary": process_summary,
+                "process_state": process_state,
+                "action_data_mapping": '; '.join([f"{action} → {', '.join(fields)}" for action, fields in action_data_mapping.items()]),
+                "current_time": current_time,
+                "event_data_attributes": "; ".join(f"{k} → {v}" for k, v in event_data_attributes.items()),
+                "case_data_attributes": '; '.join(f"{k} → {v}" for k, v in case_data_attributes.items()),
+                "message": message,
+                "conventions":  '; '.join(conventions)
+            })
+        
+        # get tool calls output messages
+        messages = []
+        if tool_output.tool_calls:
+            for tool_call in tool_output.tool_calls:
+                selected_tool = next(tool for tool in self.tools if tool.name.lower() == tool_call["name"].lower())
+                tool_msg = selected_tool.invoke(tool_call)
+            messages.append(tool_msg)
 
+        # Add tool call messages to the prompt to produce final output.
         structured_llm = llm.with_structured_output(output_model)
-        chain = final_prompt | structured_llm
-        agent_outputs = chain.invoke({
+        # 1. Format the base prompt with initial variables
+        base_messages = final_prompt.format_messages({
             "process_summary": process_summary,
             "process_state": process_state,
             "action_data_mapping": '; '.join([f"{action} → {', '.join(fields)}" for action, fields in action_data_mapping.items()]),
@@ -319,9 +396,16 @@ class Agent(BaseModel):
             "event_data_attributes": "; ".join(f"{k} → {v}" for k, v in event_data_attributes.items()),
             "case_data_attributes": '; '.join(f"{k} → {v}" for k, v in case_data_attributes.items()),
             "message": message,
-            "conventions":  '; '.join(conventions)
+            "conventions":  '; '.join(conventions),
         })
-        
+
+        # 2. Append tool output messages
+        full_messages = base_messages + messages 
+
+        # 3. Invoke the chat model with the full message list
+        agent_outputs = structured_llm.invoke(full_messages)
+
+
         return agent_outputs
     
     def _create_verify_prompt(self):
@@ -369,7 +453,7 @@ class Agent(BaseModel):
         """
         return verify_prompt
 
-    def act(self, output_model, llm, process_summary: str, process_state: str, action_data_mapping: Dict[str, List[str]], current_time: str, event_data_attributes: List[str], case_data_attributes: List[str], message:str, conventions:str, update_interval: str = "1", reflect=True):
+    def act(self, output_model, llm: Optional[Any] = None, process_summary: str = "", process_state: str = "", action_data_mapping: Dict[str, List[str]] = None, current_time: str = "", event_data_attributes: List[str] = None, case_data_attributes: List[str] = None, message: str = "", conventions: str = "", reflect=True):
             
         actions = self._take_action(
             llm=llm,
@@ -379,7 +463,6 @@ class Agent(BaseModel):
             current_time=current_time,
             event_data_attributes=event_data_attributes,
             case_data_attributes=case_data_attributes,
-            update_interval=update_interval,
             message=message,
             output_model=output_model,
             conventions=conventions
@@ -387,6 +470,12 @@ class Agent(BaseModel):
         if not reflect:
             return actions
         verify_prompt = self._create_verify_prompt()
+        # resolve llm for verification
+        if llm is None:
+            llm = self.llm
+        if llm is None:
+            raise ValueError("No llm provided for verification: pass llm to act or set agent.llm")
+
         structured_llm = llm.with_structured_output(VerifyAction)
         prompt = PromptTemplate.from_template(verify_prompt)
         chain = prompt | structured_llm

@@ -268,5 +268,5 @@ class ProcessManagerDB:
         # What kind of statistics would be useful and general given arbitrary process data?
         # What we may care about is time, resource, event data (arbitrary), case data (arbitrary) in relation to process and activities.
         # These statistics will be given to llm agent so that it can adapt their output to meet up some biases or criteria, for example, female resources take more time to finish activity rather than male, which statistics can help to define it?
-        
-        stats = {}
+
+        pass

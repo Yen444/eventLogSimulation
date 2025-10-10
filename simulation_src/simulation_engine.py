@@ -48,10 +48,10 @@ class SimulationEngine:
         self.process_manager_db = ProcessManagerDB(log_path, store=self.store)
 
         # create AgentManager and pass the shared store so it can register/get agents from DB
-        self.agent_manager = AgentManager(self.config_manager, prompt_manager, llm, store=self.store)
+        self.llm = llm
+        self.agent_manager = AgentManager(config_manager=self.config_manager, prompt_manager=prompt_manager, store=self.store, llm=self.llm)
 
         self.protocol_path = protocol_path
-        self.llm = llm
         self.arrivals = arrivals # List of tuple of simulated arrival (timestamp, lamda)
         # iteration counter used to track steps/hand-offs in the simulation
         self.iteration_id = 0
@@ -120,7 +120,7 @@ class SimulationEngine:
             else:
                 self.process_manager_db.write_to_log_file(log_event)
 
-    def _step(self, agent: Agent, process_id, current_time, update_interval, message, trigger, reflect, combined_iteration=None):
+    def _step(self, agent: Agent, process_id, current_time, message, trigger, reflect, combined_iteration=None):
         """Run a single step of the simulation.
 
         This method is intended as an internal helper. Use `run` to drive the
@@ -136,14 +136,12 @@ class SimulationEngine:
         process_state = self.process_manager_db.get_related_process_state(process_id=process_id)
         if agent is not None:
             out = agent.act(
-                llm=self.llm,
                 process_summary=process_summary,
                 process_state=process_state,
                 action_data_mapping=action_data_mapping,
                 current_time=current_time,
                 event_data_attributes=event_data_attributes,
                 case_data_attributes=case_data_attributes,
-                update_interval=update_interval,
                 message=message,
                 output_model=self.agent_manager.ListAgentOutput,
                 reflect=reflect,
@@ -172,7 +170,7 @@ class SimulationEngine:
                 raise ValueError("Either agent_id or agent_role must be provided.")
 
             print(f'Trigger agent takes action')
-            self._step(agent=agent, process_id=process_id, current_time=current_time, update_interval=datetime.timedelta(hours=1), message=message, trigger=trigger, combined_iteration=combined_iteration, reflect=False)
+            self._step(agent=agent, process_id=process_id, current_time=current_time, message=message, trigger=trigger, combined_iteration=combined_iteration, reflect=False)
 
     def run(self, start_time, end_time=None, inter_arrival_time=0, num_traces=None):
         """Run the simulation.
