@@ -281,6 +281,7 @@ class TinyDBStore:
         The event data is stored in the attribute 'event_data' as a stringified dict.
         Example: '{"temperature": 20, "duration": 3.5}'
         """
+        return f'This is the stats: 1000'
         if not event_attributes:
             return {}
         try:
@@ -407,7 +408,7 @@ class TinyDBStore:
         except Exception:
             return {}
 
-    def get_event_stats_by_resource(self, event_attribute: str, resource_attribute: str, action: str=None) -> Dict[str, Any]:
+    def get_event_data_stats_by_resource(self, event_attribute: str, resource_attribute: str, action: str=None) -> Dict[str, Any]:
         """Get statistics about event data per given action (or all actions) grouped by a resource attribute.
 
         Example: compute average event duration grouped by resource's experience level.

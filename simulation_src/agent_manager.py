@@ -35,12 +35,12 @@ llm_openai = ChatOpenAI(
 from .utils import create_dynamic_model
 from langchain_core.tools import tool
 
+
 class AgentManager:
     def __init__(self, config_manager: ConfigManager, prompt_manager: PromptManager, llm, store: TinyDBStore = None):
         self.config_manager = config_manager
         self.prompt_manager = prompt_manager
         self.llm = llm
-        # store is the TinyDBStore instance used for persistence
         self.store = store
         self.coordinator = None
         self.org_agents: List[Agent] = []
@@ -77,36 +77,49 @@ class AgentManager:
         )
         
         return AgentOutput, ListAgentOutput
-
-    @tool
-    def get_event_data_stats(self, action: str=None, event_attributes: List[str]=None) -> Dict[str, Any]:
-        """Retrieve statistics about event data per one specific action or per all actions"""
-        if self.store:
-            return self.store.get_event_data_stats(action=action, event_attributes=event_attributes)
+    
+    
+    def get_tool(self, name: str = None):
+        @tool
+        def get_event_data_stats(action: str=None, event_attributes: List[str]=None) -> Dict[str, Any]:
+            """Retrieve statistics about event data per one specific action or per all actions"""
+            if self.store:
+                return self.store.get_event_data_stats(action=action, event_attributes=event_attributes)
+            else:
+                return {}
+        @tool
+        def get_case_data_stats(case_attributes: List[str]=None) -> Dict[str, Any]:
+            """Retrieve statistics about case data of all processes"""
+            if self.store:
+                return self.store.get_case_data_stats(case_attributes=case_attributes)
+            else:
+                return {}
+        @tool
+        def get_event_data_stats_by_resource(event_attribute: str, resource_attribute: str, action: str=None) -> Dict[str, Any]:
+            """Retrieve statistics about an event data grouped by a resource attribute per given action or for all given actions
+            """
+            if self.store:
+                return self.store.get_event_data_stats_by_resource(event_attribute=event_attribute, resource_attribute=resource_attribute, action=action)
+            else:
+                return {}
+        @tool
+        def get_resource_data_stats(resource_attributes: List[str]=None) -> Dict[str, Any]:
+            """Retrieve statistics about resource data of all resources"""
+            if self.store:
+                return self.store.get_resource_data_stats(resource_attributes=resource_attributes)
+            else:
+                return {}
+        
+        if name == "get_event_data_stats":
+            return get_event_data_stats
+        elif name == "get_case_data_stats":
+            return get_case_data_stats
+        elif name == "get_event_data_stats_by_resource":
+            return get_event_data_stats_by_resource
+        elif name == "get_resource_data_stats":
+            return get_resource_data_stats
         else:
-            return {}
-    @tool
-    def get_case_data_stats(self, case_attributes: List[str]=None) -> Dict[str, Any]:
-        """Retrieve statistics about case data of all processes"""
-        if self.store:
-            return self.store.get_case_data_stats(case_attributes=case_attributes)
-        else:
-            return {}
-    @tool
-    def get_event_stats_by_resource(self, event_attribute: str, resource_attribute: str, action: str=None) -> Dict[str, Any]:
-        """Retrieve statistics about an event data grouped by a resource attribute per given action or for all given actions
-        """
-        if self.store:
-            return self.store.get_event_stats_by_resource(event_attribute=event_attribute, resource_attribute=resource_attribute, action=action)
-        else:
-            return {}
-    @tool
-    def get_resource_data_stats(self, resource_attributes: List[str]=None) -> Dict[str, Any]:
-        """Retrieve statistics about resource data of all resources"""
-        if self.store:
-            return self.store.get_resource_data_stats(resource_attributes=resource_attributes)
-        else:
-            return {}
+            return None
 
     def create_register_org_agents(self):
         """Create agents based on the configuration."""
@@ -136,7 +149,12 @@ class AgentManager:
                             actions=existing.get('actions', []),
                             action_fewshots=self.prompt_manager.get_fewshots('agent_action'),
                             llm=self.llm,
-                            tools= [self.get_event_data_stats, self.get_case_data_stats, self.get_event_stats_by_resource, self.get_resource_data_stats]
+                            tools=[
+                                self.get_tool(name="get_event_data_stats"),
+                                self.get_tool(name="get_case_data_stats"),
+                                self.get_tool(name="get_event_data_stats_by_resource"),
+                                self.get_tool(name="get_resource_data_stats")
+                            ]
                         )
                         agent.data = existing.get('data', '')
                         self.org_agents.append(agent)
@@ -157,16 +175,19 @@ class AgentManager:
                     actions=actions,
                     action_fewshots=self.prompt_manager.get_fewshots('agent_action'),
                     llm=self.llm,
-                    tools= [self.get_event_data_stats, self.get_case_data_stats, self.get_event_stats_by_resource, self.get_resource_data_stats]
+                    tools=[
+                        self.get_tool(name="get_event_data_stats"),
+                        self.get_tool(name="get_case_data_stats"),
+                        self.get_tool(name="get_event_data_stats_by_resource"),
+                        self.get_tool(name="get_resource_data_stats")
+                    ]
                 )
-
                 agent.generate_data(
                     data_model=self.ResourceData,
                     llm=self.llm,
                     organization_context=organization_context,
                     org_agents=org_agents
                 )
-
                 org_agents += f'{agent.data}, role: {agent_role}\n'
                 self.org_agents.append(agent)
 
@@ -192,8 +213,15 @@ class AgentManager:
             actions=actions,
             action_fewshots=self.prompt_manager.get_fewshots('agent_action'),
             llm=self.llm,
-            tools= [self.get_event_data_stats, self.get_case_data_stats, self.get_event_stats_by_resource, self.get_resource_data_stats]
+            tools=[
+                self.get_tool(name="get_event_data_stats"),
+                self.get_tool(name="get_case_data_stats"),
+                self.get_tool(name="get_event_data_stats_by_resource"),
+                self.get_tool(name="get_resource_data_stats")
+            ]
         )
+        # TODO: retrieve existing external agents from db and add tools
+
         agent.generate_data_onfly(data_model=self.ResourceData, llm=self.llm, organization_context=organization_context)
         self.ext_agents.append(agent)
         # register external agent in DB if process_manager provided
@@ -216,7 +244,12 @@ class AgentManager:
                 llm=self.llm,
                 conventions=existing.get('conventions', ''),
                 handoff_fewshots=self.prompt_manager.get_fewshots('coordinator_handoff'),
-                tools= [self.get_event_data_stats, self.get_case_data_stats, self.get_event_stats_by_resource, self.get_resource_data_stats]
+                tools=[
+                    self.get_tool(name="get_event_data_stats"),
+                    self.get_tool(name="get_case_data_stats"),
+                    self.get_tool(name="get_event_data_stats_by_resource"),
+                    self.get_tool(name="get_resource_data_stats")
+                ]
             )
             return
         
@@ -228,13 +261,18 @@ class AgentManager:
             process_summary=process_summary,
             llm=self.llm,
             conventions=', '.join(conventions),
-            handoff_fewshots=self.prompt_manager.get_fewshots('coordinator_handoff')
+            handoff_fewshots=self.prompt_manager.get_fewshots('coordinator_handoff'),
+            tools=[
+                self.get_tool(name="get_event_data_stats"),
+                self.get_tool(name="get_case_data_stats"),
+                self.get_tool(name="get_event_data_stats_by_resource"),
+                self.get_tool(name="get_resource_data_stats")
+            ]
         )
         self.coordinator = coordinator
         # register coordinator in DB if process_manager provided
         if self.store:
             self.store.register_coordinator(coordinator)
-    
     
     def get_agent_by_id(self, agent_id: str):
         """Get an agent by its ID."""
@@ -246,12 +284,16 @@ class AgentManager:
                     # Ensure the returned Agent has the manager's llm and tools wired
                     try:
                         agent.llm = self.llm
-                        agent.tools = [self.get_event_data_stats, self.get_case_data_stats, self.get_event_stats_by_resource, self.get_resource_data_stats]
+                        agent.tools=[
+                                self.get_tool(name="get_event_data_stats"),
+                                self.get_tool(name="get_case_data_stats"),
+                                self.get_tool(name="get_event_data_stats_by_resource"),
+                                self.get_tool(name="get_resource_data_stats")
+                        ]
                     except Exception:
                         pass
                     return agent
         except Exception:
-            # fall back to in-memory search
             pass
 
         # Fallback: search in-memory org and external agents
@@ -260,7 +302,12 @@ class AgentManager:
                 # also ensure llm/tools are present
                 try:
                     a.llm = a.llm or self.llm
-                    a.tools = a.tools or [self.get_event_data_stats, self.get_case_data_stats, self.get_event_stats_by_resource, self.get_resource_data_stats]
+                    a.tools=[
+                        self.get_tool(name="get_event_data_stats"),
+                        self.get_tool(name="get_case_data_stats"),
+                        self.get_tool(name="get_event_data_stats_by_resource"),
+                        self.get_tool(name="get_resource_data_stats")
+                    ]
                 except Exception:
                     pass
                 return a

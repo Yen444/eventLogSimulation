@@ -1,7 +1,7 @@
-from pyexpat.errors import messages
 from pydantic import BaseModel, Field, create_model
 from typing import List, Dict, Optional, Any, Type
 from langchain_core.prompts import PromptTemplate, FewShotPromptTemplate
+from langchain_core.messages import HumanMessage
 
 
 from .llm_utils import generate_random_text_with_mem_chatbot
@@ -290,6 +290,8 @@ class Agent(BaseModel):
         **Be aware: If you've been assigned an activity which you think is not suitable for that process (basing on the process summary and the process state), you can decide to take other action rather than the assigned one (if that action is suitable), or you can choose not to take any action at all.**
         **You may have to retrieve suitable statistics in order to fulfill the conventions requirements. However, do not retrieve it everytime, only retrieve it when you think it is necessary.**
         """
+        return prompt
+    
     def _create_tool_call_prompt(self):
         """Create prompt for the agent to call tools"""
         role = self.role
@@ -314,9 +316,10 @@ class Agent(BaseModel):
             Case Data Attributes: {{case_data_attributes}}  
             Conventions: {{conventions}}
 
-            To fulfill your task effectively, sometimes you may need to call analytical tools to gather necessary statistics or insights. 
-            Using the given tools, and decide if you want to call any of them or not.  
+            Always call tools. 
             """
+        # To fulfill your task effectively, sometimes you may need to call analytical tools to gather necessary statistics or insights. 
+        #    Using the given tools, and decide if you want to call any of them or not. 
 
         return prompt
     
@@ -360,6 +363,7 @@ class Agent(BaseModel):
         else:
             final_prompt = PromptTemplate.from_template(prompt)
 
+        tool_messages = []
         # Create an llm with tools if available
         if self.tools:
             llm_with_tools = llm.bind_tools(self.tools)
@@ -377,18 +381,17 @@ class Agent(BaseModel):
                 "conventions":  '; '.join(conventions)
             })
         
-        # get tool calls output messages
-        messages = []
-        if tool_output.tool_calls:
-            for tool_call in tool_output.tool_calls:
-                selected_tool = next(tool for tool in self.tools if tool.name.lower() == tool_call["name"].lower())
-                tool_msg = selected_tool.invoke(tool_call)
-            messages.append(tool_msg)
+            # get tool calls output messages
+            if tool_output.tool_calls:
+                for tool_call in tool_output.tool_calls:
+                    selected_tool = next(tool for tool in self.tools if tool.name.lower() == tool_call["name"].lower())
+                    tool_msg = selected_tool.invoke(tool_call)
+                    tool_messages.append(tool_msg)
 
         # Add tool call messages to the prompt to produce final output.
         structured_llm = llm.with_structured_output(output_model)
         # 1. Format the base prompt with initial variables
-        base_messages = final_prompt.format_messages({
+        base_messages = final_prompt.invoke({
             "process_summary": process_summary,
             "process_state": process_state,
             "action_data_mapping": '; '.join([f"{action} → {', '.join(fields)}" for action, fields in action_data_mapping.items()]),
@@ -396,11 +399,11 @@ class Agent(BaseModel):
             "event_data_attributes": "; ".join(f"{k} → {v}" for k, v in event_data_attributes.items()),
             "case_data_attributes": '; '.join(f"{k} → {v}" for k, v in case_data_attributes.items()),
             "message": message,
-            "conventions":  '; '.join(conventions),
+            "conventions":  '; '.join(conventions)
         })
 
         # 2. Append tool output messages
-        full_messages = base_messages + messages 
+        full_messages = [HumanMessage(content=base_messages.text)] + tool_messages
 
         # 3. Invoke the chat model with the full message list
         agent_outputs = structured_llm.invoke(full_messages)
