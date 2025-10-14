@@ -76,15 +76,43 @@ class Agent(BaseModel):
 
         prompt = PromptTemplate.from_template(sys_prompt)
 
-        # Add tools if available
+        # Prepare llm and separate tool chain like in _take_action
         if self.tools:
             llm_with_tools = llm.bind_tools(self.tools)
+            # create a simple tool prompt for data generation tools
+            tool_prompt = f"""
+            You are an agent helper to gather auxiliary information for data generation.
+            Your ultimate goal is to generate realistic and non-overlapping data for a person within an organization.
+            The data should include the following attributes: {{data_attributes}}
+            To ensure the generated values are both realistic and distinct, you may need to collect statistics or other supporting information about these data attributes across all organizational resources.
+            Use the available tools — especially the get_resource_data_stats — to fetch relevant statistics across all data attributes to inform the data generation.
+            """
+            tool_prompt = PromptTemplate.from_template(tool_prompt)
+            tool_chain = tool_prompt | llm_with_tools
+            tool_output = tool_chain.invoke({"organization_context": organization_context, "data_attributes": data_attributes})
+            tool_calls = getattr(tool_output, 'tool_calls', None)
+            tool_messages = []
+            if tool_calls:
+                for tool_call in tool_calls:
+                    selected_tool = next(tool for tool in self.tools if tool.name.lower() == tool_call["name"].lower())
+                    try:
+                        tool_msg = selected_tool.invoke(tool_call)
+                        tool_messages.append(tool_msg)
+                    except Exception as e:
+                        print(f'Error occurred while invoking tool {tool_call["name"]}: {e}')
+                    
+        else:
+            llm_with_tools = llm
+            tool_messages = []
 
         structured_llm = llm_with_tools.with_structured_output(data_model)
 
-        chain = prompt | structured_llm
-        data = chain.invoke({"role": self.role, "data_attributes": data_attributes, "organization_context": organization_context})
-        data =  ", ".join(f"{k}: {v}" for k, v in data.model_dump().items())
+        # Now build final messages including any tool messages and invoke structured LLM to get final data
+        base_messages = prompt.invoke({"role": self.role, "data_attributes": data_attributes, "organization_context": organization_context})
+        full_messages = [HumanMessage(content=base_messages.text)] + tool_messages
+        final_output = structured_llm.invoke(full_messages)
+        data =  ", ".join(f"{k}: {v}" for k, v in final_output.model_dump().items())
+
         if not reflect:
             # write to data values
             self.data = data
@@ -158,15 +186,44 @@ class Agent(BaseModel):
 
         prompt = PromptTemplate.from_template(sys_prompt)
 
-        # Add tools if available
+        # Prepare llm and separate tool chain
         if self.tools:
             llm_with_tools = llm.bind_tools(self.tools)
+            # create a tool prompt to gather auxiliary info for generation
+            tool_prompt = f"""
+            You are an agent helper to gather auxiliary information for data generation.
+            Your ultimate goal is to generate realistic and non-overlapping data for a person within an organization.
+            The data should include the following attributes: {{data_attributes}}
+            To ensure the generated values are both realistic and distinct, you may need to collect statistics or other supporting information about these data attributes across all organizational resources.
+            Use the available tools — especially the get_resource_data_stats — to fetch relevant statistics across all data attributes to inform the data generation.
+            """
+            tool_prompt = PromptTemplate.from_template(tool_prompt)
+            tool_chain = tool_prompt | llm_with_tools
+            tool_output = tool_chain.invoke({"organization_context": organization_context, "org_agents": org_agents, "data_attributes": data_attributes})
+            tool_calls = getattr(tool_output, 'tool_calls', None)
+            tool_messages = []
+            if tool_calls:
+                for tool_call in tool_calls:
+                    selected_tool = next(tool for tool in self.tools if tool.name.lower() == tool_call["name"].lower())
+                    try:
+                        tool_msg = selected_tool.invoke(tool_call)
+                        tool_messages.append(tool_msg)
+                    except Exception as e:
+                        print(f'Error occurred while invoking tool {tool_call["name"]}: {e}')
+                    
+        else:
+            llm_with_tools = llm
+            tool_messages = []
 
         structured_llm = llm_with_tools.with_structured_output(data_model)
 
-        chain = prompt | structured_llm
-        data = chain.invoke({"role": self.role, "data_attributes": data_attributes, "organization_context": organization_context, "org_agents": org_agents, "random_text": random_text})
-        data =  ", ".join(f"{k}: {v}" for k, v in data.model_dump().items())
+
+        # Now produce final data using any collected tool messages
+        base_messages = prompt.invoke({"role": self.role, "data_attributes": data_attributes, "organization_context": organization_context, "org_agents": org_agents, "random_text": random_text})
+        full_messages = [HumanMessage(content=base_messages.text)] + tool_messages
+        final_output = structured_llm.invoke(full_messages)
+        data =  ", ".join(f"{k}: {v}" for k, v in final_output.model_dump().items())
+
         if not reflect:
             # write to data values
             self.data = data
@@ -271,10 +328,10 @@ class Agent(BaseModel):
 
         **If the current process state is empty, which means you're the first one to take action to initialize the process"
         - Leave the process_id empty and output the other fields like described.
-        - The end_timestamp of your initializing action MUST be identical to the timestamp at which you are assigned this action.
+        - Take the first action in the process to initialize the process.
 
         **If the current process state is not empty, which means there is already a process_id**
-        - Output the correct process_id like the one given to you and output the other fields like described.
+        - Output the correct process_id like the one given to you (in the process state) and output the other fields like described.
 
         **If you finish multiple actions:**
         - Repeat the above structured format for each action.
@@ -288,7 +345,8 @@ class Agent(BaseModel):
         **Sometimes you're overloaded with so many other tasks or with your life. If you can't do your assigned task, just specifiy the reason in the message field and leave other fields empty.**
         **Be active: Even if you've only been assigned one action by the coordinator, take the initiative. Based on the process summary, your allowed actions, and the nature of those actions (e.g., quick tasks often performed in sequence), after taking your assigned action, identify and perform any consecutive actions that logically follow. Be proactive—move the process forward when it makes sense.**
         **Be aware: If you've been assigned an activity which you think is not suitable for that process (basing on the process summary and the process state), you can decide to take other action rather than the assigned one (if that action is suitable), or you can choose not to take any action at all.**
-        **You may have to retrieve suitable statistics in order to fulfill the conventions requirements. However, do not retrieve it everytime, only retrieve it when you think it is necessary.**
+        **Process ID: Don't create process_id by yourself, it is either given to you in the current process state, or you leave it empty if you're the first one to take action to initialize the process.**
+        **If you're asked to take an action which is not to initialize the process, but the current process state is empty, then not take any action at all.**
         """
         return prompt
     
@@ -316,10 +374,10 @@ class Agent(BaseModel):
             Case Data Attributes: {{case_data_attributes}}  
             Conventions: {{conventions}}
 
-            Always call tools. 
+            To fulfill your task effectively, sometimes you may need to call analytical tools to gather necessary statistics or insights. 
+            Using the given tools, and decide if you want to call any of them or not. 
             """
-        # To fulfill your task effectively, sometimes you may need to call analytical tools to gather necessary statistics or insights. 
-        #    Using the given tools, and decide if you want to call any of them or not. 
+
 
         return prompt
     
@@ -382,14 +440,25 @@ class Agent(BaseModel):
             })
         
             # get tool calls output messages
-            if tool_output.tool_calls:
-                for tool_call in tool_output.tool_calls:
+            tool_calls = getattr(tool_output, 'tool_calls', None)
+            if tool_calls:
+                for tool_call in tool_calls:
                     selected_tool = next(tool for tool in self.tools if tool.name.lower() == tool_call["name"].lower())
-                    tool_msg = selected_tool.invoke(tool_call)
-                    tool_messages.append(tool_msg)
+                    if selected_tool is not None:
+                        print(f'Tool: {tool_call["name"]} is being called by llm with arguments {tool_call.get("args", tool_call.get("arguments", {}))}')
+                    else:
+                        print(f'Tool: {tool_call["name"]} not found in available tools.')
+                    try:
+                        tool_msg = selected_tool.invoke(tool_call)
+                        tool_messages.append(tool_msg)
+                    except Exception as e:
+                        print(f'Error occurred while invoking tool {tool_call["name"]}: {e}')
+                    
+        else:
+            llm_with_tools = llm
 
         # Add tool call messages to the prompt to produce final output.
-        structured_llm = llm.with_structured_output(output_model)
+        structured_llm = llm_with_tools.with_structured_output(output_model)
         # 1. Format the base prompt with initial variables
         base_messages = final_prompt.invoke({
             "process_summary": process_summary,
@@ -455,6 +524,8 @@ class Agent(BaseModel):
 
         """
         return verify_prompt
+
+    
 
     def act(self, output_model, llm: Optional[Any] = None, process_summary: str = "", process_state: str = "", action_data_mapping: Dict[str, List[str]] = None, current_time: str = "", event_data_attributes: List[str] = None, case_data_attributes: List[str] = None, message: str = "", conventions: str = "", reflect=True):
             

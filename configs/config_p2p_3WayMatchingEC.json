@@ -26,7 +26,7 @@
             "SRM: Document Complete",
             "SRM: In Transfer to Execution Syst.",
             "SRM: Ordered",
-            "SRN: Change was Transmitted"
+            "SRM: Change was Transmitted"
         ],
         "Purchasing and Receiving Team": [
             "Create Purchase Order Item",
@@ -63,8 +63,11 @@
     "last_activities": [
         "Clear Invoice"
     ],
+    "start_activities": [
+        "SRM: Created"
+    ],
     "conventions": [
-        "Male employers takes more time to complete the task than female employers",
+        "female employers takes more time to complete the task than male employers in general",
         "An invoice can only be cleared at least one week after the corresponding goods receipt has been recorded."
     ]
 }

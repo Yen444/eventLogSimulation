@@ -2,6 +2,7 @@ import os
 from typing import Dict, Any, List, Optional
 from .agent import Agent
 from .coordinator_agent import Coordinator
+from pydantic import BaseModel
 
 from tinydb import TinyDB, where
 from tinydb.storages import JSONStorage
@@ -39,9 +40,15 @@ class TinyDBStore:
         self.events = self.db.table('events')
         self.handoffs = self.db.table('handoff_protocols')
         self.logging = self.db.table('llm_call_logs')
+        # meta table for storing simulation metadata (latest timestamp, etc.)
+        self.meta = self.db.table('meta')
 
     def register_org_agent(self, agent: Agent):
         agent = agent.model_dump()
+        # remove non-serializable runtime objects
+        if isinstance(agent, dict):
+            agent.pop('llm', None)
+            agent.pop('tools', None)
         agent = self._sanitize(agent)
         existing = self.org_agents.get(where('id') == agent.get('id'))
         if existing:
@@ -52,6 +59,10 @@ class TinyDBStore:
     
     def register_ext_agent(self, agent: Agent):
         agent = agent.model_dump()
+        # remove non-serializable runtime objects
+        if isinstance(agent, dict):
+            agent.pop('llm', None)
+            agent.pop('tools', None)
         agent = self._sanitize(agent)
         existing = self.ext_agents.get(where('id') == agent.get('id'))
         if existing:
@@ -61,7 +72,15 @@ class TinyDBStore:
         self.flush()
 
     def register_coordinator(self, coordinator: Coordinator):
-        coordinator = coordinator.model_dump(mode='json')
+        # Use plain model_dump to get a dict and avoid Pydantic json-mode serialization
+        # which can attempt to serialize class objects (ModelMetaclass) and fail.
+        coordinator = coordinator.model_dump()
+        # Remove or null-out fields that commonly contain non-serializable objects
+        # such as llm instances or tool callables. _sanitize will also stringify
+        # unknown objects, but removing these explicitly avoids Pydantic JSON errors.
+        if isinstance(coordinator, dict):
+            coordinator.pop('llm', None)
+            coordinator.pop('tools', None)
         coordinator = self._sanitize(coordinator)
         self.coordinators.insert(coordinator)
         self.flush()
@@ -116,6 +135,10 @@ class TinyDBStore:
         agents = self.org_agents.all() + self.ext_agents.all()
         return [agent.get('id') for agent in agents if agent.get('id')]
     
+    def get_all_process_ids(self) -> List[str]:
+        processes = self.processes.all()
+        return [proc.get('process_id') for proc in processes if proc.get('process_id')]
+    
     def get_org_agents(self) -> List[Dict[str, Any]]:
         return self.org_agents.all()
 
@@ -134,6 +157,28 @@ class TinyDBStore:
     def get_num_completed_processes(self) -> int:
         """Return the number of completed processes."""
         return len(self.processes.search(where('completed') == True))
+
+    def get_latest_timestamp(self) -> Optional[str]:
+        """Return latest stored simulation timestamp as ISO string, or None."""
+        try:
+            rec = self.meta.get(where('key') == 'latest_timestamp')
+            if not rec:
+                return None
+            return rec.get('value')
+        except Exception:
+            return None
+
+    def set_latest_timestamp(self, ts_iso: str):
+        """Set latest stored simulation timestamp (ISO string)."""
+        try:
+            existing = self.meta.get(where('key') == 'latest_timestamp')
+            if existing:
+                self.meta.update({'value': ts_iso}, where('key') == 'latest_timestamp')
+            else:
+                self.meta.insert({'key': 'latest_timestamp', 'value': ts_iso})
+            self.flush()
+        except Exception:
+            pass
     
     def get_incomplete_processes(self) -> List[str]:
         """Return the list of process IDs that are not completed."""
@@ -232,6 +277,14 @@ class TinyDBStore:
         - timedelta -> total seconds (float)
         - recursively handle dicts and lists
         """
+        # Handle Pydantic BaseModel instances by dumping them to dict first
+        try:
+            if isinstance(obj, BaseModel):
+                return self._sanitize(obj.model_dump())
+        except Exception:
+            # If pydantic isn't available or checking fails, continue
+            pass
+
         # Primitive and None types
         if obj is None:
             return None
@@ -281,7 +334,7 @@ class TinyDBStore:
         The event data is stored in the attribute 'event_data' as a stringified dict.
         Example: '{"temperature": 20, "duration": 3.5}'
         """
-        return f'This is the stats: 1000'
+        #return f'This is the stats: 1000'
         if not event_attributes:
             return {}
         try:

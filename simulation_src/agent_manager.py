@@ -37,11 +37,12 @@ from langchain_core.tools import tool
 
 
 class AgentManager:
-    def __init__(self, config_manager: ConfigManager, prompt_manager: PromptManager, llm, store: TinyDBStore = None):
+    def __init__(self, config_manager: ConfigManager, prompt_manager: PromptManager, llm, store: TinyDBStore = None, use_tools: bool = True):
         self.config_manager = config_manager
         self.prompt_manager = prompt_manager
         self.llm = llm
         self.store = store
+        self.use_tools = use_tools
         self.coordinator = None
         self.org_agents: List[Agent] = []
         self.ext_agents: List[Agent] = []
@@ -149,12 +150,14 @@ class AgentManager:
                             actions=existing.get('actions', []),
                             action_fewshots=self.prompt_manager.get_fewshots('agent_action'),
                             llm=self.llm,
-                            tools=[
-                                self.get_tool(name="get_event_data_stats"),
-                                self.get_tool(name="get_case_data_stats"),
-                                self.get_tool(name="get_event_data_stats_by_resource"),
-                                self.get_tool(name="get_resource_data_stats")
-                            ]
+                            tools=(
+                                [
+                                    self.get_tool(name="get_event_data_stats"),
+                                    self.get_tool(name="get_case_data_stats"),
+                                    self.get_tool(name="get_event_data_stats_by_resource"),
+                                    self.get_tool(name="get_resource_data_stats")
+                                ] if self.use_tools else None
+                            )
                         )
                         agent.data = existing.get('data', '')
                         self.org_agents.append(agent)
@@ -175,12 +178,14 @@ class AgentManager:
                     actions=actions,
                     action_fewshots=self.prompt_manager.get_fewshots('agent_action'),
                     llm=self.llm,
-                    tools=[
-                        self.get_tool(name="get_event_data_stats"),
-                        self.get_tool(name="get_case_data_stats"),
-                        self.get_tool(name="get_event_data_stats_by_resource"),
-                        self.get_tool(name="get_resource_data_stats")
-                    ]
+                    tools=(
+                        [
+                            self.get_tool(name="get_event_data_stats"),
+                            self.get_tool(name="get_case_data_stats"),
+                            self.get_tool(name="get_event_data_stats_by_resource"),
+                            self.get_tool(name="get_resource_data_stats")
+                        ] if self.use_tools else None
+                    )
                 )
                 agent.generate_data(
                     data_model=self.ResourceData,
@@ -213,12 +218,14 @@ class AgentManager:
             actions=actions,
             action_fewshots=self.prompt_manager.get_fewshots('agent_action'),
             llm=self.llm,
-            tools=[
-                self.get_tool(name="get_event_data_stats"),
-                self.get_tool(name="get_case_data_stats"),
-                self.get_tool(name="get_event_data_stats_by_resource"),
-                self.get_tool(name="get_resource_data_stats")
-            ]
+            tools=(
+                [
+                    self.get_tool(name="get_event_data_stats"),
+                    self.get_tool(name="get_case_data_stats"),
+                    self.get_tool(name="get_event_data_stats_by_resource"),
+                    self.get_tool(name="get_resource_data_stats")
+                ] if self.use_tools else None
+            )
         )
         # TODO: retrieve existing external agents from db and add tools
 
@@ -244,12 +251,14 @@ class AgentManager:
                 llm=self.llm,
                 conventions=existing.get('conventions', ''),
                 handoff_fewshots=self.prompt_manager.get_fewshots('coordinator_handoff'),
-                tools=[
-                    self.get_tool(name="get_event_data_stats"),
-                    self.get_tool(name="get_case_data_stats"),
-                    self.get_tool(name="get_event_data_stats_by_resource"),
-                    self.get_tool(name="get_resource_data_stats")
-                ]
+                tools=(
+                    [
+                        self.get_tool(name="get_event_data_stats"),
+                        self.get_tool(name="get_case_data_stats"),
+                        self.get_tool(name="get_event_data_stats_by_resource"),
+                        self.get_tool(name="get_resource_data_stats")
+                    ] if self.use_tools else None
+                )
             )
             return
         
@@ -262,12 +271,14 @@ class AgentManager:
             llm=self.llm,
             conventions=', '.join(conventions),
             handoff_fewshots=self.prompt_manager.get_fewshots('coordinator_handoff'),
-            tools=[
-                self.get_tool(name="get_event_data_stats"),
-                self.get_tool(name="get_case_data_stats"),
-                self.get_tool(name="get_event_data_stats_by_resource"),
-                self.get_tool(name="get_resource_data_stats")
-            ]
+            tools=(
+                [
+                    self.get_tool(name="get_event_data_stats"),
+                    self.get_tool(name="get_case_data_stats"),
+                    self.get_tool(name="get_event_data_stats_by_resource"),
+                    self.get_tool(name="get_resource_data_stats")
+                ] if self.use_tools else None
+            )
         )
         self.coordinator = coordinator
         # register coordinator in DB if process_manager provided

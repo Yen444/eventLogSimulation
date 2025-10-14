@@ -1,6 +1,7 @@
 from pydantic import BaseModel, Field, create_model
 from typing import List, Dict, Optional, Any
 from langchain_core.prompts import PromptTemplate, FewShotPromptTemplate
+from langchain_core.messages import HumanMessage
 
 import json
 
@@ -48,11 +49,18 @@ class Coordinator(BaseModel):
             - agent_role: <the role of the agent>
             - message: <the message to the agent, what should they do for that process_id>
 
-        If process_states is empty, it means no process is currently active. In this case, you need to call an agent to take an action that initializes the process. 
-            - Simply omit the process ID in this scenario.
+        If process_states says that "Process state is empty, you must call an agent to start a new process." In this case, you need to call an agent to take an action that initializes the process.
+            - Simply omit the process ID in this scenario. Leave it empty.
             - Using the process summary to decide which agent you should call to initialize the process.
             - Read the process summary carefully to identify the agent role responsible for triggering the process by performing the first action.
+            
+        If process_states is not empty, it means there are already some processes in progress. In this case, you must examine the current states of all processes and determine which process should be handled next and which agent should be assigned to it.
+            - You must output the correct process_id, agent_id, agent_role, and message for the selected agent.
+            - Do not leave process_id empty. 
+            - Do not make up the process_id by yourself.
+            - You are required to output the exact process_id corresponding to the process you selected from the current process_states.
 
+        Carefully read both the process summary and the current process state to identify which agent role is responsible for the next action in that process.     
         If multiple processes needed to be handled and multiple agents needed to be called, output them in list.
         If you want to assign the agent within the organization, you muss define the agent_id and the agent_role.
         If you want to assign the agent outside the organization, but this agent has not existed yet in the external_agents and you need to contact a new one, define their agent_role.
@@ -73,8 +81,8 @@ class Coordinator(BaseModel):
             **Maintain Process Integrity:**
                 - Never assign different agents to the same activity within the same process.
                 - Strictly adhere to Process IDs: Each process has a unique state and guidelines. Carefully read Process IDs and their current states to ensure every assignment aligns precisely with that process's specific requirements and general guidelines.
-            **You may have to retrieve suitable statistics in order to fulfill the conventions requirements. However, do not retrieve it everytime, only retrieve it when you think it is necessary.**
 
+            **You must always provide an output — do not return an empty output. Inside the output, the process_id field may be empty depending on the given process_state.**
         Below is the information given to you:
         Process_summary: {process_summary}
         Process_states: {process_states}
@@ -84,6 +92,27 @@ class Coordinator(BaseModel):
 
         Below are some examples of how to assign agents to tasks basing on given inputs:
         """
+        tool_prompt = """
+            You are the coordinator of a process that manages multiple instances. 
+            Each instance has a unique ID (process_id) and a current state that shows all events so far.
+
+            Your responsibilities:
+                - Understand the process.
+                - Review all current process_states.
+                - Decide which agent should be assigned next for which process_id.
+            
+            You are given:
+                - process_summary: description of the process flow and responsibilities.
+                - process_states: current states of all ongoing process instances.
+                - organization_agents: list of internal agents and their roles.
+                - external_agents: list of external agents and their roles.
+
+            To fulfill your task effectively, sometimes you may need to call analytical tools to gather necessary statistics or insights. 
+            Only call tools when it is necessary to follow the conventions or determine the correct agent/task. 
+            Avoid unnecessary tool calls or repeated data retrieval.
+            Using the given tools, and decide if you want to call any of them or not.
+            """
+        
         fewshot_examples = self.handoff_fewshots
         if fewshot_examples:
             # example prompt template
@@ -100,15 +129,38 @@ class Coordinator(BaseModel):
 
         else:
             final_prompt = PromptTemplate.from_template(prompt)
+
+        tool_messages = []
         
         # Add tools if available
         if self.tools:
             llm_with_tools = self.llm.bind_tools(self.tools)
+            tool_prompt = PromptTemplate.from_template(tool_prompt)
+            tool_chain = tool_prompt | llm_with_tools
 
-        structured_llm = llm_with_tools.with_structured_output(ListCoordinatorOutput) 
-
-        chain = final_prompt | llm_with_tools
-        raw_output = chain.invoke({
+            tool_output = tool_chain.invoke({
+                "process_summary": self.process_summary,
+                "process_states": process_states,
+                "org_agents": org_agents_str,   
+                "external_agents": external_agents_str,
+                "current_timestamp": current_timestamp,
+                'conventions':  self.conventions
+            })
+            # get tool calls output messages
+            tool_calls = getattr(tool_output, 'tool_calls', None)
+            if tool_calls:
+                for tool_call in tool_calls:
+                    selected_tool = next(tool for tool in self.tools if tool.name.lower() == tool_call["name"].lower())
+                    if selected_tool is not None:
+                        print(f'Tool: {tool_call["name"]} is being called by llm with arguments {tool_call.get("args", tool_call.get("arguments", {}))}')
+                    else:
+                        print(f'Tool: {tool_call["name"]} not found in available tools.')
+                    tool_msg = selected_tool.invoke(tool_call)
+                    tool_messages.append(tool_msg)
+        else:
+            llm_with_tools = self.llm
+        
+        base_message = final_prompt.invoke({
             "process_summary": self.process_summary,
             "process_states": process_states,
             "org_agents": org_agents_str,   
@@ -116,10 +168,15 @@ class Coordinator(BaseModel):
             "current_timestamp": current_timestamp,
             'conventions':  self.conventions
         })
-        for tool_call in raw_output.tool_calls:
-            print(tool_call)
-        coordinator_output = structured_llm.invoke(raw_output.content)
-        return raw_output, coordinator_output
+
+        all_messages = [HumanMessage(content=base_message.text)] + tool_messages
+        
+        #structured_llm = llm_with_tools.with_structured_output(ListCoordinatorOutput) 
+        #coordinator_output = structured_llm.invoke(all_messages)
+        structured_llm = self.llm.with_structured_output(ListCoordinatorOutput) 
+        coordinator_output = structured_llm.invoke(base_message)
+
+        return coordinator_output
         
         
         

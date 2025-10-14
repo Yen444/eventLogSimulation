@@ -21,8 +21,9 @@ def check_characteristics(event_log: pd.DataFrame):
     event_log['end_timestamp'] = pd.to_datetime(event_log['end_time'])
 
     # Compute duration in seconds
-    event_log['duration'] = (event_log['end_timestamp'] - event_log['start_timestamp']).dt.total_seconds()
-
+    #event_log['duration'] = (event_log['end_timestamp'] - event_log['start_timestamp']).dt.total_seconds()
+    # duration is in task_duration inside event_data column, in hours (string)
+    event_log['duration'] = event_log['event_data'].str.extract(r'task_duration:\s*(\d+\.?\d*)').astype(float) * 3600  # convert hours to seconds
     # Extract gender from agent_data (example: "name: Klaas Jansen, age: 42, gender: Male")
     def extract_gender(agent_data):
         if pd.isna(agent_data):
@@ -238,7 +239,7 @@ def process_rlog(in_file, num_traces):
 
 def main():
     # Preprocess generated log
-    in_file_glog = './logs/p2p_3WayMatchingEC_fewshots_01.csv' #'./real_event_logs/BPIChallenge2019_3WayMatchingEC_cleaned.csv' #
+    in_file_glog = './logs/p2p_3WayMatchingEC_zeroshot_no_tool.csv' #'./real_event_logs/BPIChallenge2019_3WayMatchingEC_cleaned.csv' #
     gen_log = preprocess_glog(in_file=in_file_glog, num_traces=500)
 
     # Preprocess real log
@@ -361,7 +362,7 @@ def main():
     print(f'Generating trace variants statistics for real log...')
     trace_variants(log_df=real_log, case_id_col='case_id', activity_col='Activity', timestamp_col='end_time', out_file=real_stats_file)
     
-    #check_characteristics(gen_log)
+    check_characteristics(gen_log)
 
 if __name__ == "__main__":
     main()

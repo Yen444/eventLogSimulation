@@ -12,9 +12,14 @@ class PromptManager:
     - Provides: `list_fewshots()`, `list_prompts()`, `get_fewshow(name_or_path) -> List`, `get_prompt(name_or_path) -> str`, `refresh()`.
     """
 
-    def __init__(self, base_dir: str = './prompts', fewshot_dir: str = 'fewshots', prompt_dir: str = 'prompts'):
+    def __init__(self, base_dir: str = './prompts', fewshot_dir: str = 'fewshots', prompt_dir: str = 'prompts', use_fewshots: bool = True):
         self.base_dir = os.path.abspath(base_dir or os.getcwd())
-        self.fewshot_dir = os.path.join(self.base_dir, fewshot_dir)
+        # If fewshots are disabled, point fewshot_dir to a non-existent folder
+        self.use_fewshots = bool(use_fewshots)
+        if self.use_fewshots:
+            self.fewshot_dir = os.path.join(self.base_dir, fewshot_dir)
+        else:
+            self.fewshot_dir = os.path.join(self.base_dir, '__no_fewshots__')
         self.prompt_dir = os.path.join(self.base_dir, prompt_dir)
 
         # indexes
@@ -102,5 +107,5 @@ class PromptManager:
 
 
 # helper
-def create_prompt_manager(base_dir: Optional[str] = None) -> PromptManager:
-    return PromptManager(base_dir=base_dir)
+def create_prompt_manager(base_dir: Optional[str] = None, use_fewshots: bool = True) -> PromptManager:
+    return PromptManager(base_dir=base_dir, use_fewshots=use_fewshots)
