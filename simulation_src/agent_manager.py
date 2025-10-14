@@ -37,7 +37,7 @@ from langchain_core.tools import tool
 
 
 class AgentManager:
-    def __init__(self, config_manager: ConfigManager, prompt_manager: PromptManager, llm, store: TinyDBStore = None, use_tools: bool = True):
+    def __init__(self, config_manager: ConfigManager, prompt_manager: PromptManager, llm, store: TinyDBStore = None, use_tools=False):
         self.config_manager = config_manager
         self.prompt_manager = prompt_manager
         self.llm = llm
@@ -300,7 +300,7 @@ class AgentManager:
                                 self.get_tool(name="get_case_data_stats"),
                                 self.get_tool(name="get_event_data_stats_by_resource"),
                                 self.get_tool(name="get_resource_data_stats")
-                        ]
+                        ] if self.use_tools else None
                     except Exception:
                         pass
                     return agent
@@ -318,7 +318,7 @@ class AgentManager:
                         self.get_tool(name="get_case_data_stats"),
                         self.get_tool(name="get_event_data_stats_by_resource"),
                         self.get_tool(name="get_resource_data_stats")
-                    ]
+                    ] if self.use_tools else None
                 except Exception:
                     pass
                 return a

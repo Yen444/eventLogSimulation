@@ -106,28 +106,55 @@ class SimulationEngine:
     def _process_agent_outputs(self, agent, agent_outputs, process_state, combined_iteration, trigger, last_activities):
         """Helper function to process agent outputs."""
         multi_output = len(agent_outputs) > 1
-        for idx, agent_output in enumerate(agent_outputs):
-            process_id = agent_output.process_id
-            action = getattr(agent_output, 'action', None)
-            if action is not None:
-                action = action.strip().lower()
-                # check validity of action/process_id combination
-                is_valid, reason = self._check_valid_action(process_id, action)
-                
-                if is_valid is False:
-                    print(f"Skipping invalid action: {reason}")
-                    continue
+        start_activities = self.config_manager.configs.get('start_activities', []) or []
+        start_activities = [act.strip().lower() for act in start_activities if isinstance(act, str)]
 
+        # Case: multiple outputs, all empty process_ids, one is start activity
+        all_empty = all(not getattr(out, 'process_id', None) for out in agent_outputs)
+        has_start_activity = any(
+            getattr(out, 'action', '').strip().lower() in start_activities for out in agent_outputs
+        )
+
+        if multi_output and all_empty and has_start_activity:
+            new_process_id = self.process_manager_db.generate_process_id()
+            for idx, agent_output in enumerate(agent_outputs):
                 safe_combined = f"{combined_iteration}_{idx}" if multi_output else combined_iteration
                 log_event = logEvent(
-                    process_id=agent_output.process_id if not trigger else self.process_manager_db.generate_process_id(),
+                    process_id=new_process_id,
                     agent=agent,
                     event=agent_output,
                     process_state=process_state,
                     iteration_id=safe_combined
                 )
-
                 self.process_manager_db.update_process(log_event=log_event, last_activities=last_activities)
+            return  # prevent double-logging
+
+        # Regular processing
+        for idx, agent_output in enumerate(agent_outputs):
+            process_id = getattr(agent_output, 'process_id', None)
+            action = getattr(agent_output, 'action', None)
+            if not action:
+                continue
+
+            action = action.strip().lower()
+            is_valid, reason = self._check_valid_action(process_id, action)
+            if not is_valid:
+                print(f"Skipping invalid action: {reason}")
+                continue
+
+            process_id = process_id or (self.process_manager_db.generate_process_id() if trigger else None)
+            safe_combined = f"{combined_iteration}_{idx}" if multi_output else combined_iteration
+
+            log_event = logEvent(
+                process_id=process_id,
+                agent=agent,
+                event=agent_output,
+                process_state=process_state,
+                iteration_id=safe_combined
+            )
+            self.process_manager_db.update_process(log_event=log_event, last_activities=last_activities)
+
+        # BUG: if an agent produces multiple outputs with empty process_id, only the first one will be recorded with a new process_id, the rest will be skipped as invalid
 
     def _check_valid_action(self, process_id, action: str):
         """Validate whether an action is valid given start_activities and existing processes.
@@ -173,6 +200,8 @@ class SimulationEngine:
             process_state = ""
         else:
             process_state = self.process_manager_db.get_related_process_state(process_id=process_id)
+            if process_state == "" or process_state is None:
+                print(f"Process state for process_id {process_id} is empty even no trigger")
         if agent is not None:
             out = agent.act(
                 process_summary=process_summary,
@@ -293,7 +322,7 @@ class SimulationEngine:
 
         # No explicit startup incomplete-process scan — the regular sub-step loop will
         # pick up incomplete processes and hand them off to the coordinator.
-        
+        simulation_start_time = datetime.datetime.now()
         while True:
             complete_processes = self.process_manager_db.store.get_num_completed_processes()
             print(f'Number of completed processes so far: {complete_processes}')
@@ -309,6 +338,7 @@ class SimulationEngine:
             if end_reasons:
                 # join multiple reasons if more than one applies
                 print(f"Ending simulation: {', '.join(end_reasons)}")
+                print(f"Simulation took {datetime.datetime.now() - simulation_start_time} for {complete_processes}")
                 break
             
             # Process arrivals within the current time window

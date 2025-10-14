@@ -328,10 +328,11 @@ class Agent(BaseModel):
 
         **If the current process state is empty, which means you're the first one to take action to initialize the process"
         - Leave the process_id empty and output the other fields like described.
-        - Take the first action in the process to initialize the process.
+        - Take the first action in the process to initialize the process like described in the process summary (or in the message).
 
         **If the current process state is not empty, which means there is already a process_id**
         - Output the correct process_id like the one given to you (in the process state) and output the other fields like described.
+        - REMEMBER: YOU MUST ALWAYS OUTPUT THE PROCESS_ID GIVEN TO YOU IN THE PROCESS_STATE, OTHERWISE THE PROCESS WILL BE BROKEN.
 
         **If you finish multiple actions:**
         - Repeat the above structured format for each action.
@@ -345,8 +346,9 @@ class Agent(BaseModel):
         **Sometimes you're overloaded with so many other tasks or with your life. If you can't do your assigned task, just specifiy the reason in the message field and leave other fields empty.**
         **Be active: Even if you've only been assigned one action by the coordinator, take the initiative. Based on the process summary, your allowed actions, and the nature of those actions (e.g., quick tasks often performed in sequence), after taking your assigned action, identify and perform any consecutive actions that logically follow. Be proactive—move the process forward when it makes sense.**
         **Be aware: If you've been assigned an activity which you think is not suitable for that process (basing on the process summary and the process state), you can decide to take other action rather than the assigned one (if that action is suitable), or you can choose not to take any action at all.**
-        **Process ID: Don't create process_id by yourself, it is either given to you in the current process state, or you leave it empty if you're the first one to take action to initialize the process.**
-        **If you're asked to take an action which is not to initialize the process, but the current process state is empty, then not take any action at all.**
+        **Process ID: Don't create process_id by yourself, always use the one given to you in the process state.**
+        **Process ID: Don't leave it empty if it is given to you in the process state.**
+        
         """
         return prompt
     
