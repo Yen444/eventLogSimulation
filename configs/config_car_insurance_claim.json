@@ -62,7 +62,7 @@
         "Notify customer"
     ],
     "conventions": [
-        "Female employers takes more time to complete the task than male employers",
+        "Male employers takes more time to complete the task than female employers",
         "Claim type which are related to theft take more time to assess than accident claims"
     ]
 }
