@@ -37,7 +37,7 @@ llm_openai = ChatOpenAI(
 
 
 class SimulationEngine:
-    def __init__(self, llm, config_path, log_path, protocol_path, db_path, arrivals, use_fewshots: bool = True, use_tools: bool = True):
+    def __init__(self, llm, config_path, log_path, protocol_path, db_path, arrivals, use_fewshots: bool = True, use_tools: bool = True, agent_data_creation_reflect: bool = False, action_reflect: bool = True):
         self.config_manager = ConfigManager(config_path=config_path)
         # create a PromptManager and pass it to AgentManager
         prompt_manager = create_prompt_manager(use_fewshots=use_fewshots)
@@ -47,9 +47,13 @@ class SimulationEngine:
         # ProcessManagerDB (use the shared store)
         self.process_manager_db = ProcessManagerDB(log_path, store=self.store)
 
+        self.action_reflect = action_reflect
+        self.use_tools = use_tools
+        self.agent_data_creation_reflect = agent_data_creation_reflect
+
         # create AgentManager and pass the shared store so it can register/get agents from DB
         self.llm = llm
-        self.agent_manager = AgentManager(config_manager=self.config_manager, prompt_manager=prompt_manager, store=self.store, llm=self.llm, use_tools=use_tools)
+        self.agent_manager = AgentManager(config_manager=self.config_manager, prompt_manager=prompt_manager, store=self.store, llm=self.llm, use_tools=self.use_tools, agent_data_creation_reflect=self.agent_data_creation_reflect)
 
         self.protocol_path = protocol_path
         self.arrivals = arrivals # List of tuple of simulated arrival (timestamp, lamda)
@@ -243,7 +247,7 @@ class SimulationEngine:
             # write coordinator handoff to protocol
             self.log_protocol(timestamp=current_time, from_agent='coordinator', to_agent=agent.id if agent else '', process_id=process_id, message=message, process_state=process_state, combined_iteration=combined_iteration)
             #print(f'Trigger agent takes action')
-            self._step(agent=agent, process_id=process_id, current_time=current_time, message=message, trigger=trigger, combined_iteration=combined_iteration, reflect=False)
+            self._step(agent=agent, process_id=process_id, current_time=current_time, message=message, trigger=trigger, combined_iteration=combined_iteration, reflect=self.action_reflect)
     
     def _check_valid_handoff(self, process_id, trigger):
         """Validate whether a handoff is valid given existing processes and agents.

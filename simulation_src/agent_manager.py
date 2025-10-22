@@ -37,12 +37,13 @@ from langchain_core.tools import tool
 
 
 class AgentManager:
-    def __init__(self, config_manager: ConfigManager, prompt_manager: PromptManager, llm, store: TinyDBStore = None, use_tools=False):
+    def __init__(self, config_manager: ConfigManager, prompt_manager: PromptManager, llm, store: TinyDBStore = None, use_tools=False, agent_data_creation_reflect=False):
         self.config_manager = config_manager
         self.prompt_manager = prompt_manager
         self.llm = llm
         self.store = store
         self.use_tools = use_tools
+        self.agent_data_creation_reflect = agent_data_creation_reflect
         self.coordinator = None
         self.org_agents: List[Agent] = []
         self.ext_agents: List[Agent] = []
@@ -191,7 +192,8 @@ class AgentManager:
                     data_model=self.ResourceData,
                     llm=self.llm,
                     organization_context=organization_context,
-                    org_agents=org_agents
+                    org_agents=org_agents,
+                    reflect=self.agent_data_creation_reflect
                 )
                 org_agents += f'{agent.data}, role: {agent_role}\n'
                 self.org_agents.append(agent)
@@ -229,7 +231,7 @@ class AgentManager:
         )
         # TODO: retrieve existing external agents from db and add tools
 
-        agent.generate_data_onfly(data_model=self.ResourceData, llm=self.llm, organization_context=organization_context)
+        agent.generate_data_onfly(data_model=self.ResourceData, llm=self.llm, organization_context=organization_context, reflect=self.agent_data_creation_reflect)
         self.ext_agents.append(agent)
         # register external agent in DB if process_manager provided
         try:

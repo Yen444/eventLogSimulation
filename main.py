@@ -17,7 +17,7 @@ def main():
     # Version 01: male resource takes more time than female, invoice should be cleared at least one week after the corresponding goods receipt has been recorded.
 
     start_time = '2018-01-01T00:00:00+00:00'
-    num_traces = 500
+    num_traces = 600
 
     # P2P cleaned process
 
@@ -41,15 +41,15 @@ def main():
     # ensure output directories exist
     os.makedirs('logs', exist_ok=True)
     os.makedirs('protocols', exist_ok=True)
-    os.makedirs('db', exist_ok=True)
+    os.makedirs('db_zeroshot_tool_reflect_01', exist_ok=True)
 
     # simulate arrivals
     arrivals, inter_arrival_time = simulate_arrivals(start_time=start_time,
-                                 monthly_rate=monthly_rates,
-                                 weekday_rate=weekday_rates,
-                                 hourly_rate=hourly_rates,
-                                 base_rate=BASE_RATE_HOUR,
-                                 max_events=num_traces)
+                                                     monthly_rate=monthly_rates,
+                                                     weekday_rate=weekday_rates,
+                                                     hourly_rate=hourly_rates,
+                                                     base_rate=BASE_RATE_HOUR,
+                                                     max_events=2000)
 
     arrivals_csv_path = os.path.join('logs', 'arrivals_p2p_3WayMatchingEC.csv')
     with open(arrivals_csv_path, 'w', encoding='utf-8') as f:
@@ -57,22 +57,22 @@ def main():
         for arrival in arrivals:
             f.write(f'{arrival[0]},{arrival[1]}\n')
 
-    # paths
+    # paths for Version 0: Female resource takes more time
     simulation_config_path = './configs/config_p2p_3WayMatchingEC.json'
-    log_path = './logs/p2p_3WayMatchingEC_fewshots_01.csv'
-    protocol_path = './protocols/p2p_3WayMatchingEC_fewshots_01.csv'
-    db_path = './db'
+    log_path = './logs/p2p_3WayMatchingEC_zeroshot_tool_reflect_01.csv'
+    protocol_path = './protocols/p2p_3WayMatchingEC_zeroshot_tool_reflect_01.csv'
+    db_path = './db_zeroshot_tool_reflect_01'
 
     # instantiate the LLM lazily to avoid import-time failures
     try:
         from langchain_google_genai import ChatGoogleGenerativeAI
-        llm_mid = ChatGoogleGenerativeAI(model='gemini-2.0-flash-lite', temperature=0.5)
+        llm_mid = ChatGoogleGenerativeAI(model='gemini-2.0-flash', temperature=0.5)
     except Exception:
         print('Warning: Failed to initialize ChatGoogleGenerativeAI. Make sure required LLM packages and API keys are installed and configured.')
         raise
     
     # create and run the simulation engine
-    simulation_engine = SimulationEngine(llm=llm_mid, config_path=simulation_config_path, log_path=log_path, protocol_path=protocol_path, db_path=db_path, arrivals=arrivals)
+    simulation_engine = SimulationEngine(llm=llm_mid, config_path=simulation_config_path, log_path=log_path, protocol_path=protocol_path, db_path=db_path, arrivals=arrivals, use_fewshots=False, use_tools=True)
     simulation_engine.run(start_time=start_time, num_traces=num_traces, inter_arrival_time=inter_arrival_time)
 
 if __name__ == "__main__":

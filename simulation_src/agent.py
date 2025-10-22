@@ -11,6 +11,8 @@ from .config_manager import ConfigManager
 from dotenv import load_dotenv
 import os
 
+from deepdiff import DeepDiff
+
 load_dotenv()
 
 api_key = os.getenv('GOOGLE_API_KEY')
@@ -61,6 +63,7 @@ class Agent(BaseModel):
         Guidelines:
         - Ensure all values are internally consistent and appropriate for the specified role and organizational context.
         - Emphasize diversity, plausibility, and details specific to the role.
+        - Make sure the data is diverse, e.g. do not always generate the same name, age, gender, etc.
         
         Return the output in a clearly structured format, listing each attribute and its corresponding value:
         - <attribute>: <value>
@@ -169,6 +172,12 @@ class Agent(BaseModel):
         The organizational context is as follows: {organization_context}.
 
         Generate plausible values for the following attributes: {data_attributes}. Ensure the values are internally consistent and appropriate for the given role and organizational context.
+
+        Guidelines:
+        - Avoid generic placeholders such as "John Doe", "Jane Doe", "A. N. Other", "Test User", or similarly artificial values.
+        - Ensure all attributes are plausible, unique, and reflect real-world diversity, relevant to the person's role.
+        - Maintain consistency with the organizational culture and business process context.
+        - Ensure that the generated data does not represent any biases or stereotypes related to gender, ethnicity, age, or other personal characteristics. Strive for fair and balanced representation in all attributes.
 
         When generating this person's information, take into account the existing members of the organization to avoid unrealistic overlaps. For instance, if there are already two employees named Alice who are 30 years old, avoid adding a third with the same name and age. You can retrieve the statistics of existing members from the organizational database.
 
@@ -360,7 +369,9 @@ class Agent(BaseModel):
         prompt = f"""
             You are an intelligent agent participating in a business process simulation.
 
-            Your objective is to decide which actions to take and whether you need to call any analytical tools to gather information before deciding.  
+            Your objective is to decide which actions to take and output the necessary information for those actions such as case data, event data, timestamps.
+            To fulfill your task effectively, sometimes you may need to call analytical tools to gather necessary statistics or insights, e.g. to output one meaningful value for an attribute, you may need to get statistics for that attribute across all cases/events first.
+            There are many other examples when you need to call tools to gather information before deciding your actions.
 
             Below is your context and task:
 
@@ -376,8 +387,10 @@ class Agent(BaseModel):
             Case Data Attributes: {{case_data_attributes}}  
             Conventions: {{conventions}}
 
-            To fulfill your task effectively, sometimes you may need to call analytical tools to gather necessary statistics or insights. 
+            Your task:
             Using the given tools, and decide if you want to call any of them or not. 
+            If you want to call a tool, specify the tool name and the arguments needed.
+            You can call multiple tools if needed.
             """
 
 
@@ -480,7 +493,7 @@ class Agent(BaseModel):
         agent_outputs = structured_llm.invoke(full_messages)
 
 
-        return agent_outputs
+        return agent_outputs, tool_messages
     
     def _create_verify_prompt(self):
         """Create verification prompt for the agent"""
@@ -503,6 +516,12 @@ class Agent(BaseModel):
         You did plan to finish the following action:
         {{previous_action}}
 
+        You need to following the following biases:
+        {{conventions}}
+
+        Some provided statistics from the database for reference (if any):
+        {{tool_messages}}
+
         **Your Task:**
         Evaluate the *appropriateness* of the previously proposed action based *primarily* on the timestamps associated with that action. For the action, assess the following:
 
@@ -516,13 +535,33 @@ class Agent(BaseModel):
         - Consider your energy levels, time availability, and workload distribution. If the timestamps are likely to hinder your ability to complete the action effectively, mark it as inappropriate.
 
         **For each action, determine whether its timestamps are both appropriate and personally feasible:**
+        - If the action meets both criteria, keep the timestamps for that action.
+        - If it fails either criterion, change the timestamps to a more appropriate value.
 
-        - If the action meets both criteria, output True.
+        3. **Case data and Event data appropriateness:**
+        - Is it meaningful and plausible?
+        - Comparing the value against some statistics if you're provided, try to make the values diverse and realistic.
+        
+        **For each case data and event data value provided:**
+        - If the data value is appropriate, keep it as is.
+        - If any of the data values are inappropriate, you can change them to be more appropriate.
 
-        - If it fails either criterion, output False.
+        4. **End Action:**
+        - Basing on the process summary and the process state, is it appropriate to end the process with this action?
+        - If yes, keep it as True.
+        - If no, change it to False.
+
+        NOTE: ALWAYS KEEP THE *PROCESS_ID*, *ACTION*, AND "MESSAGE" AS THEY ARE. BECAUSE YOU ARE ONLY VERIFYING THE TIMESTAMPS, DATA VALUES, AND END_ACTION FIELD.
 
         **Output format:**
-        - appropriate: ```<True or False>```
+        - process_id: ```<process_id>```  
+        - action: ```<your_chosen_action>```  
+        - start_timestamp: ```<start_timestamp_of_action>```
+        - end_timestamp: ```<end_timestamp_of_action>```  
+        - case_data: ```<case_data_attribute_1>: <case_data_value_1>, <case_data_attribute_2>: <case_data_value_2>, ...```  
+        - event_data: ```<event_data_attribute_1>: <event_data_value_1>, <event_data_attribute_2>: <event_data_value_2>, ...```
+        - message: ```<your_message>```
+        - end_action: ```<True> or <False>```
 
         """
         return verify_prompt
@@ -531,7 +570,7 @@ class Agent(BaseModel):
 
     def act(self, output_model, llm: Optional[Any] = None, process_summary: str = "", process_state: str = "", action_data_mapping: Dict[str, List[str]] = None, current_time: str = "", event_data_attributes: List[str] = None, case_data_attributes: List[str] = None, message: str = "", conventions: str = "", reflect=True):
             
-        actions = self._take_action(
+        actions, tool_messages = self._take_action(
             llm=llm,
             process_summary=process_summary,
             process_state=process_state,
@@ -552,11 +591,13 @@ class Agent(BaseModel):
         if llm is None:
             raise ValueError("No llm provided for verification: pass llm to act or set agent.llm")
 
-        structured_llm = llm.with_structured_output(VerifyAction)
+        structured_llm = llm.with_structured_output(output_model)
         prompt = PromptTemplate.from_template(verify_prompt)
         chain = prompt | structured_llm
-        to_remove = []
 
+        tool_messages_str = [tool_msg.content for tool_msg in tool_messages]
+
+        verified_agent_outputs = []
         for action in actions.agent_outputs:
             start_timestamp_str = extract_time_parts(action.start_timestamp)
             end_timestamp_str = extract_time_parts(action.end_timestamp)
@@ -571,14 +612,36 @@ class Agent(BaseModel):
                 "process_summary": process_summary,
                 "process_state": process_state,
                 "current_time": current_time,
-                "previous_action": action_string
+                "previous_action": action_string,
+                "conventions": conventions,
+                "tool_messages": "\n".join(tool_messages_str)
             })
-            if verified_agent_output.appropriate == False:
-                # remove action from the first actions
-                print(f'ACTION IS REMOVED')
-                to_remove.append(action)
+            verified_agent_outputs.append(verified_agent_output)
 
-        actions.agent_outputs = [action for action in actions.agent_outputs if action not in to_remove]
+            original_data = action.model_dump()
+            verified_data = verified_agent_output.model_dump()
+
+            # Compute detailed differences
+            diff = DeepDiff(original_data, verified_data, ignore_order=True)
+
+            print(f'tool messages used for verification: {tool_messages_str}')
+
+            if diff:
+                print(f"\n✅ Action '{action.action}' is VERIFIED — changes detected:")
+                if "values_changed" in diff:
+                    for path, change in diff["values_changed"].items():
+                        print(f"  {path}: {change['old_value']} → {change['new_value']}")
+                if "dictionary_item_added" in diff:
+                    for path in diff["dictionary_item_added"]:
+                        print(f"  Added: {path}")
+                if "dictionary_item_removed" in diff:
+                    for path in diff["dictionary_item_removed"]:
+                        print(f"  Removed: {path}")
+            else:
+                print(f"\n❌ Action '{action.action}' is NOT verified — no changes.")
+
+        actions.agent_outputs = [verified_agent_outputs]
+        
         return actions
 
 
