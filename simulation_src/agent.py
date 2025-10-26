@@ -314,6 +314,11 @@ class Agent(BaseModel):
         You must output all values for the event data attributes.
         For case data attributes, only output the values that your action requires, if any. 
 
+        *Pay attention to the kind of data attributes (nominal categorical, ordinal categorical, continuous numerical, etc.).*
+        - For continuous numerical data attributes, make sure that they are diverse, random, and continuous but still meaningful across cases and events.
+        - For categorical data attributes, make sure that they are diverse and random but still meaningful across cases and events.
+        - For ordinal categorical data attributes, make sure that they respect the scale, diverse, and meaningful.
+
         **Please use the following structured format for each action taken:**
 
         - process_id: ```<process_id>```  
@@ -346,8 +351,9 @@ class Agent(BaseModel):
         **If you finish multiple actions:**
         - Repeat the above structured format for each action.
 
-        **If you think the action you take can end the process:**
+        **If you think the action you take can end the process (basing on the process summary and the process state):**
         - Output True for end_action.
+        - Otherwise, output False.
 
         **You can take consecutive actions for one process and same actions for different processes, depending on the process and process states you're given.**
 
@@ -357,6 +363,7 @@ class Agent(BaseModel):
         **Be aware: If you've been assigned an activity which you think is not suitable for that process (basing on the process summary and the process state), you can decide to take other action rather than the assigned one (if that action is suitable), or you can choose not to take any action at all.**
         **Process ID: Don't create process_id by yourself, always use the one given to you in the process state.**
         **Process ID: Don't leave it empty if it is given to you in the process state.**
+        **Data: data values must be diverse, random, and meaningful. Avoid repeating the same values for different cases and events.**
         
         """
         return prompt
@@ -370,8 +377,11 @@ class Agent(BaseModel):
             You are an intelligent agent participating in a business process simulation.
 
             Your objective is to decide which actions to take and output the necessary information for those actions such as case data, event data, timestamps.
+                - You want to output diverse, random, and meaningful data values for the event data and case data attributes required for your actions.
+                - You also want to output the data that stay alligned with the conventions provided.
+            
             To fulfill your task effectively, sometimes you may need to call analytical tools to gather necessary statistics or insights, e.g. to output one meaningful value for an attribute, you may need to get statistics for that attribute across all cases/events first.
-            There are many other examples when you need to call tools to gather information before deciding your actions.
+            
 
             Below is your context and task:
 
@@ -465,6 +475,7 @@ class Agent(BaseModel):
                         print(f'Tool: {tool_call["name"]} not found in available tools.')
                     try:
                         tool_msg = selected_tool.invoke(tool_call)
+                        print(f'Tool message: {tool_msg.content}')
                         tool_messages.append(tool_msg)
                     except Exception as e:
                         print(f'Error occurred while invoking tool {tool_call["name"]}: {e}')
@@ -495,12 +506,12 @@ class Agent(BaseModel):
 
         return agent_outputs, tool_messages
     
-    def _create_verify_prompt(self):
-        """Create verification prompt for the agent"""
+    def _create_modify_prompt(self):
+        """Create modification prompt for the agent"""
         role = self.role
         actions = ', '.join(self.actions)
         data = self.data if self.data else "No data available"
-        verify_prompt = f"""
+        modify_prompt = f"""
         You are a reflective agent reviewing your previously decided actions in a business process.
 
         Here is a summary of the situation:
@@ -513,17 +524,20 @@ class Agent(BaseModel):
         - Current Timestamp: {{current_time}}
         - Current Process State: {{process_state}}
 
-        You did plan to finish the following action:
+        You planned to finish the following action:
         {{previous_action}}
 
-        You need to following the following biases:
+        You need to follow the following biases:
         {{conventions}}
+
+        Event Data Attributes: {{event_data_attributes}}
+        Case Data Attributes: {{case_data_attributes}}
 
         Some provided statistics from the database for reference (if any):
         {{tool_messages}}
 
         **Your Task:**
-        Evaluate the *appropriateness* of the previously proposed action based *primarily* on the timestamps associated with that action. For the action, assess the following:
+        Evaluate the *appropriateness* of the previously proposed action based on the timestamps, case data, and event data associated with that action. For the action, assess the following:
 
         1. **Are the timestamps appropriate:**  
         - Does the start and end timestamps fall within a typical and reasonable time window for work-related activities?  
@@ -536,22 +550,31 @@ class Agent(BaseModel):
 
         **For each action, determine whether its timestamps are both appropriate and personally feasible:**
         - If the action meets both criteria, keep the timestamps for that action.
-        - If it fails either criterion, change the timestamps to a more appropriate value.
+        - If it fails either criterion, modify the timestamps to a more appropriate value.
 
-        3. **Case data and Event data appropriateness:**
+        3. **Case data and event data appropriateness:**
         - Is it meaningful and plausible?
-        - Comparing the value against some statistics if you're provided, try to make the values diverse and realistic.
+        - Is it diverse and realistic? You can refer to the provided statistics from the database (if any)?
+        - Pay attention to the kind of data attributes (nominal categorical, ordinal categorical, continuous numerical, etc.).
+        - For continuous numerical data attributes, make sure that they are diverse, random, and continuous but still meaningful across cases and events.
+        - For categorical data attributes, make sure that they are diverse and random but still meaningful across cases and events.
+        - For ordinal categorical data attributes, make sure that they respect the scale, diverse, and meaningful.
         
         **For each case data and event data value provided:**
-        - If the data value is appropriate, keep it as is.
-        - If any of the data values are inappropriate, you can change them to be more appropriate.
+        - If the data value is appropriate, diverse, random enough, and meaningful, keep it as is.
+        - If any of the data values do not meet the criteria, you can modify them to be more diverse, random, and meaningful.
+        - You have to take the kind of data attributes into consideration, numerical data are more diverse than categorical data. However, categorical data can also be diverse and random at a certain level. 
+        - Use the provided statistics for your reference (if any).
 
         4. **End Action:**
-        - Basing on the process summary and the process state, is it appropriate to end the process with this action?
+        - Basing on the process summary, is it appropriate to end the process with this action?
         - If yes, keep it as True.
         - If no, change it to False.
 
-        NOTE: ALWAYS KEEP THE *PROCESS_ID*, *ACTION*, AND "MESSAGE" AS THEY ARE. BECAUSE YOU ARE ONLY VERIFYING THE TIMESTAMPS, DATA VALUES, AND END_ACTION FIELD.
+        NOTE: 
+        - Do NOT modify *PROCESS_ID*, *ACTION*, or *MESSAGE*. Keep their values exactly as they are. Because you're only verifying the timestamps, case data, event data, and end_action field.
+        - Either retain their current values or update them to more appropriate ones.
+        - Do NOT set them to empty values, except if they were initially empty.
 
         **Output format:**
         - process_id: ```<process_id>```  
@@ -564,7 +587,7 @@ class Agent(BaseModel):
         - end_action: ```<True> or <False>```
 
         """
-        return verify_prompt
+        return modify_prompt
 
     
 
@@ -584,7 +607,8 @@ class Agent(BaseModel):
         )
         if not reflect:
             return actions
-        verify_prompt = self._create_verify_prompt()
+
+        modify_prompt = self._create_modify_prompt()
         # resolve llm for verification
         if llm is None:
             llm = self.llm
@@ -592,13 +616,17 @@ class Agent(BaseModel):
             raise ValueError("No llm provided for verification: pass llm to act or set agent.llm")
 
         structured_llm = llm.with_structured_output(output_model)
-        prompt = PromptTemplate.from_template(verify_prompt)
+        prompt = PromptTemplate.from_template(modify_prompt)
         chain = prompt | structured_llm
 
         tool_messages_str = [tool_msg.content for tool_msg in tool_messages]
 
-        verified_agent_outputs = []
+        modified_agent_outputs = []
+        #print(actions)
+        #print('\n')
         for action in actions.agent_outputs:
+            #print(f'Original action: {action}')
+            #print('\n')
             start_timestamp_str = extract_time_parts(action.start_timestamp)
             end_timestamp_str = extract_time_parts(action.end_timestamp)
             action_string = (
@@ -606,41 +634,37 @@ class Agent(BaseModel):
                 f'action: {action.action}, '
                 f'timestamp: You started this action {start_timestamp_str} and finished this action {end_timestamp_str}, '
                 f'case_data: {", ".join([f"{key}: {value}" for key, value in (action.case_data.model_dump().items() if action.case_data else []) if value is not None])}, '
-                f'event_data: {", ".join([f"{key}: {value}" for key, value in (action.event_data.model_dump().items() if action.event_data else []) if value is not None])}\n'
+                f'event_data: {", ".join([f"{key}: {value}" for key, value in (action.event_data.model_dump().items() if action.event_data else []) if value is not None])}, '
+                f'message: {action.message}, '
+                f'end_action: {action.end_action}'
             )
-            verified_agent_output = chain.invoke({
+            #print(f'Action string for modification: {action_string}')
+            #print('\n')
+            modified_agent_output = chain.invoke({
                 "process_summary": process_summary,
                 "process_state": process_state,
                 "current_time": current_time,
                 "previous_action": action_string,
                 "conventions": conventions,
+                "event_data_attributes": "; ".join(f"{k} → {v}" for k, v in event_data_attributes.items()),
+                "case_data_attributes": '; '.join(f"{k} → {v}" for k, v in case_data_attributes.items()),
                 "tool_messages": "\n".join(tool_messages_str)
             })
-            verified_agent_outputs.append(verified_agent_output)
+            #print(f'Unstructured Modified action: {modified_agent_output}')
+            #print('\n')
 
-            original_data = action.model_dump()
-            verified_data = verified_agent_output.model_dump()
+            
+            #modified_agent_output = structured_llm.invoke(modified_agent_output.content)
 
-            # Compute detailed differences
-            diff = DeepDiff(original_data, verified_data, ignore_order=True)
+            #print(f'Structured Modified action: {modified_agent_output}')
+            
+            modified_agent_outputs.append(modified_agent_output.agent_outputs[0])
 
-            print(f'tool messages used for verification: {tool_messages_str}')
-
-            if diff:
-                print(f"\n✅ Action '{action.action}' is VERIFIED — changes detected:")
-                if "values_changed" in diff:
-                    for path, change in diff["values_changed"].items():
-                        print(f"  {path}: {change['old_value']} → {change['new_value']}")
-                if "dictionary_item_added" in diff:
-                    for path in diff["dictionary_item_added"]:
-                        print(f"  Added: {path}")
-                if "dictionary_item_removed" in diff:
-                    for path in diff["dictionary_item_removed"]:
-                        print(f"  Removed: {path}")
-            else:
-                print(f"\n❌ Action '{action.action}' is NOT verified — no changes.")
-
-        actions.agent_outputs = [verified_agent_outputs]
+        #print(modified_agent_outputs)
+        #print('\n')
+        #actions.agent_outputs = None
+        actions.agent_outputs = modified_agent_outputs
+        #print(actions)
         
         return actions
 

@@ -1,7 +1,14 @@
 import os
 from typing import Dict, Any, List, Optional
-from .agent import Agent
-from .coordinator_agent import Coordinator
+#from .agent import Agent
+#from .coordinator_agent import Coordinator
+try:
+    from .agent import Agent
+    from .coordinator_agent import Coordinator
+except ImportError:
+    # Fallback for when imported outside of package context
+    from simulation_src.agent import Agent
+    from simulation_src.coordinator_agent import Coordinator
 from pydantic import BaseModel
 
 from tinydb import TinyDB, where
@@ -317,16 +324,38 @@ class TinyDBStore:
         self.db.close()
     
     def _parse_stringified_dict(self, raw_data: Any) -> Optional[Dict[str, Any]]:
-        """Helper to parse a stringified dict safely."""
+        """Helper to parse a stringified dict safely, supporting JSON, key=value, and key: value formats."""
         if not raw_data:
             return None
-        try:
-            data = json.loads(raw_data) if isinstance(raw_data, str) else raw_data
-            if isinstance(data, dict):
-                return data
-            return None
-        except Exception:
-            return None
+
+        if isinstance(raw_data, dict):
+            return raw_data
+
+        if isinstance(raw_data, str):
+            # --- Case 1: Try JSON ---
+            try:
+                if '{' in raw_data and '}' in raw_data:
+                    return json.loads(raw_data)
+            except json.JSONDecodeError:
+                pass  # fallback to other formats
+
+            # --- Case 2: Try key=value style ---
+            try:
+                pairs = [item.split('=', 1) for item in raw_data.split()]
+                if all(len(p) == 2 for p in pairs):
+                    return {k: v.strip("'\"") for k, v in pairs}
+            except Exception:
+                pass
+
+            # --- Case 3: Try key: value, comma-separated style ---
+            try:
+                segments = [seg.strip() for seg in raw_data.split(',')]
+                pairs = [seg.split(':', 1) for seg in segments if ':' in seg]
+                return {k.strip(): v.strip() for k, v in pairs}
+            except Exception:
+                return None
+
+        return None
 
     def get_event_data_stats(self, action: str=None, event_attributes: List[str]=None) -> Dict[str, Any]:
         """Get statistics about event data per one action or per all actions.
@@ -340,6 +369,7 @@ class TinyDBStore:
         try:
             events = self.events.all()
             if action:
+                
                 events = [e for e in events if e.get('action') == action]
             if not events:
                 return {}   
@@ -373,23 +403,28 @@ class TinyDBStore:
                     except (ValueError, TypeError):
                         pass
 
+                # Create frequency dictionary for all unique values
+                value_freq = {}
+                for v in values:
+                    value_freq[v] = value_freq.get(v, 0) + 1
+
                 if len(num_values) == len(values) and num_values:
                     # Numeric statistics
                     stats[attr] = {
-                        'count': len(num_values),
                         'avg': statistics.mean(num_values),
                         'min': min(num_values),
                         'max': max(num_values),
-                        'std': statistics.pstdev(num_values) if len(num_values) > 1 else 0.0
+                        'std': statistics.pstdev(num_values) if len(num_values) > 1 else 0.0,
+                        'total_values': len(num_values),
+                        'unique_values': len(value_freq),
+                        'value_frequencies': value_freq
                     }
                 else:
                     # Categorical statistics
-                    counts = {}
-                    for v in values:
-                        counts[v] = counts.get(v, 0) + 1
                     stats[attr] = {
-                        'unique_values': len(counts),
-                        'counts': counts
+                        'total_values': len(values),
+                        'unique_values': len(value_freq),
+                        'value_frequencies': value_freq
                     }
 
             return stats
@@ -439,21 +474,26 @@ class TinyDBStore:
                     except (ValueError, TypeError):
                         pass
 
+                # Create frequency dictionary for all unique values
+                value_freq = {}
+                for v in values:
+                    value_freq[v] = value_freq.get(v, 0) + 1
+
                 if len(num_values) == len(values) and num_values:
                     stats[attr] = {
-                        'count': len(num_values),
                         'avg': statistics.mean(num_values),
                         'min': min(num_values),
                         'max': max(num_values),
-                        'std': statistics.pstdev(num_values) if len(num_values) > 1 else 0.0
+                        'std': statistics.pstdev(num_values) if len(num_values) > 1 else 0.0,
+                        'total_values': len(num_values),
+                        'unique_values': len(value_freq),
+                        'value_frequencies': value_freq
                     }
                 else:
-                    counts = {}
-                    for v in values:
-                        counts[v] = counts.get(v, 0) + 1
                     stats[attr] = {
-                        'unique_values': len(counts),
-                        'counts': counts
+                        'total_values': len(values),
+                        'unique_values': len(value_freq),
+                        'value_frequencies': value_freq
                     }
 
             return stats
@@ -484,7 +524,7 @@ class TinyDBStore:
                 if res_id:
                     agent = self.get_agent_by_id(res_id)
                     if agent:
-                        raw_data = agent.get('data')
+                        raw_data = agent.data
                         if raw_data:
                             data = self._parse_stringified_dict(raw_data)
                             if data:
@@ -517,22 +557,26 @@ class TinyDBStore:
                         num_values.append(float(v))
                     except (ValueError, TypeError):
                         pass
+                # Create frequency dictionary for all unique values
+                value_freq = {}
+                for v in values:
+                    value_freq[v] = value_freq.get(v, 0) + 1
 
                 if len(num_values) == len(values) and num_values:
                     stats[res_value] = {
-                        'count': len(num_values),
                         'avg': statistics.mean(num_values),
                         'min': min(num_values),
                         'max': max(num_values),
-                        'std': statistics.pstdev(num_values) if len(num_values) > 1 else 0.0
+                        'std': statistics.pstdev(num_values) if len(num_values) > 1 else 0.0,
+                        'total_values': len(num_values),
+                        'unique_values': len(value_freq),
+                        'value_frequencies': value_freq
                     }
                 else:
-                    counts = {}
-                    for v in values:
-                        counts[v] = counts.get(v, 0) + 1
                     stats[res_value] = {
-                        'unique_values': len(counts),
-                        'counts': counts
+                        'total_values': len(values),
+                        'unique_values': len(value_freq),
+                        'value_frequencies': value_freq
                     }
 
             return stats
@@ -574,6 +618,11 @@ class TinyDBStore:
                 if not values:
                     continue
 
+                # Create frequency dictionary for all unique values
+                value_freq = {}
+                for v in values:
+                    value_freq[v] = value_freq.get(v, 0) + 1
+
                 # Try numeric conversion
                 num_values = []
                 for v in values:
@@ -584,19 +633,19 @@ class TinyDBStore:
 
                 if len(num_values) == len(values) and num_values:
                     stats[attr] = {
-                        'count': len(num_values),
                         'avg': statistics.mean(num_values),
                         'min': min(num_values),
                         'max': max(num_values),
-                        'std': statistics.pstdev(num_values) if len(num_values) > 1 else 0.0
+                        'std': statistics.pstdev(num_values) if len(num_values) > 1 else 0.0,
+                        'total_values': len(num_values),
+                        'unique_values': len(value_freq),
+                        'value_frequencies': value_freq
                     }
                 else:
-                    counts = {}
-                    for v in values:
-                        counts[v] = counts.get(v, 0) + 1
                     stats[attr] = {
-                        'unique_values': len(counts),
-                        'counts': counts
+                        'total_values': len(values),
+                        'unique_values': len(value_freq),
+                        'value_frequencies': value_freq
                     }
 
             return stats
@@ -634,6 +683,11 @@ class TinyDBStore:
                 if not values:
                     continue
 
+                # Create frequency dictionary for all unique values
+                value_freq = {}
+                for v in values:
+                    value_freq[v] = value_freq.get(v, 0) + 1
+
                 num_values = []
                 for v in values:
                     try:
@@ -643,19 +697,19 @@ class TinyDBStore:
 
                 if len(num_values) == len(values) and num_values:
                     stats[attr] = {
-                        'count': len(num_values),
                         'avg': statistics.mean(num_values),
                         'min': min(num_values),
                         'max': max(num_values),
-                        'std': statistics.pstdev(num_values) if len(num_values) > 1 else 0.0
+                        'std': statistics.pstdev(num_values) if len(num_values) > 1 else 0.0,
+                        'total_values': len(num_values),
+                        'unique_values': len(value_freq),
+                        'value_frequencies': value_freq
                     }
                 else:
-                    counts = {}
-                    for v in values:
-                        counts[v] = counts.get(v, 0) + 1
                     stats[attr] = {
-                        'unique_values': len(counts),
-                        'counts': counts
+                        'total_values': len(values),
+                        'unique_values': len(value_freq),
+                        'value_frequencies': value_freq
                     }
             return stats
 

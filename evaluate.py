@@ -682,12 +682,12 @@ def process_rlog(in_file, num_traces):
 
 def main():
     # Preprocess generated log
-    in_file_glog = './logs/p2p_3WayMatchingEC_zeroshot_tool_01.csv' #'./real_event_logs/BPIChallenge2019_3WayMatchingEC_cleaned.csv' #
-    tiny_db_json_path = './db_zeroshot_tool_01/simulation_store.json'
+    in_file_glog = './logs/p2p_3WayMatchingEC_zeroshot_tool_reflect_01_300traces_01.csv' #'./real_event_logs/BPIChallenge2019_3WayMatchingEC_cleaned.csv' #
+    tiny_db_json_path = './db_zeroshot_tool_reflect_01_300traces_01/simulation_store.json'
     num_g_traces, gen_log = preprocess_glog(in_file=in_file_glog, tiny_db_json_path=tiny_db_json_path, num_traces=500)
 
     # Preprocess real log
-    in_file_rlog = './real_event_logs/BPIChallenge2019_3WayMatchingEC.csv' #_cleaned
+    in_file_rlog = './real_event_logs/BPIChallenge2019_3WayMatchingEC_cleaned.csv' #_cleaned
     real_log = process_rlog(in_file=in_file_rlog, num_traces=num_g_traces)
 
 
@@ -813,15 +813,16 @@ def main():
     print(f'Generating trace variants statistics for real log...')
     trace_variants(log_df=real_log, case_id_col='case_id', activity_col='Activity', timestamp_col='end_time', out_file=real_stats_file)
     
-    #check_characteristics(gen_log)
+    check_characteristics(gen_log)
+
     atr_variability_gen = check_attribute_variability(
         log_df=gen_log,
         case_id_col='case_id',
         case_attrs=['case_spend_area', 'case_sub_spend_area', 'case_net_worth', 'case_vendor'],
         event_attrs=['event_task_difficulty', 'event_task_duration', 'event_satisfaction']
     )
-    #print('Attribute variability statistics for generated log:')
-    #pretty_print_attribute_variability(atr_variability)
+    print('Attribute variability statistics for generated log:')
+    pretty_print_attribute_variability(atr_variability_gen)
 
     #check_characteristics(real_log)
     atr_variability_real = check_attribute_variability(
@@ -830,15 +831,10 @@ def main():
         case_attrs=['Cumulative net worth (EUR)', 'case:Spend area text', 'case:Sub spend area text', 'case:Vendor'],
         event_attrs=[]
     )
-    #print('Attribute variability statistics for real log:')
-    pretty_print_attribute_variability(atr_variability_real)
+    print('Attribute variability statistics for real log:')
+    #pretty_print_attribute_variability(atr_variability_real)
 
-    plot_string_distributions(
-        gen_df=gen_log,
-        gen_attr='case_vendor',
-        real_df=real_log,
-        real_attr='case:Vendor'
-    )
+
     plot_string_distribution(
         df=real_log,
         attr='case:Vendor',
@@ -848,6 +844,33 @@ def main():
         df=gen_log,
         attr='case_vendor',
         top_n=20
+    )
+    plot_string_distribution(
+        df=real_log,
+        attr='case:Spend area text',
+        top_n=20
+    )
+    plot_string_distribution(
+        df=gen_log,
+        attr='case_spend_area',
+        top_n=20
+    )
+    plot_string_distribution(
+        df=real_log,
+        attr='case:Sub spend area text',
+        top_n=20
+    )
+    plot_string_distribution(
+        df=gen_log,
+        attr='case_sub_spend_area',
+        top_n=20
+    )
+    plot_numeric_distributions(
+        gen_df=gen_log,
+        gen_attr='case_net_worth',
+        real_df=real_log,
+        real_attr='Cumulative net worth (EUR)',
+        bins=30
     )
 
 

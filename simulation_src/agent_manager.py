@@ -83,21 +83,21 @@ class AgentManager:
     
     def get_tool(self, name: str = None):
         @tool
-        def get_event_data_stats(action: str=None, event_attributes: List[str]=None) -> Dict[str, Any]:
+        def get_event_data_stats(action: Optional[str]=None, event_attributes: Optional[List[str]]=None) -> Dict[str, Any]:
             """Retrieve statistics about event data per one specific action or per all actions"""
             if self.store:
                 return self.store.get_event_data_stats(action=action, event_attributes=event_attributes)
             else:
                 return {}
         @tool
-        def get_case_data_stats(case_attributes: List[str]=None) -> Dict[str, Any]:
+        def get_case_data_stats(case_attributes: Optional[List[str]]=None) -> Dict[str, Any]:
             """Retrieve statistics about case data of all processes"""
             if self.store:
                 return self.store.get_case_data_stats(case_attributes=case_attributes)
             else:
                 return {}
         @tool
-        def get_event_data_stats_by_resource(event_attribute: str, resource_attribute: str, action: str=None) -> Dict[str, Any]:
+        def get_event_data_stats_by_resource(event_attribute: Optional[str]=None, resource_attribute: Optional[str]=None, action: Optional[str]=None) -> Dict[str, Any]:
             """Retrieve statistics about an event data grouped by a resource attribute per given action or for all given actions
             """
             if self.store:
@@ -105,7 +105,7 @@ class AgentManager:
             else:
                 return {}
         @tool
-        def get_resource_data_stats(resource_attributes: List[str]=None) -> Dict[str, Any]:
+        def get_resource_data_stats(resource_attributes: Optional[List[str]]=None) -> Dict[str, Any]:
             """Retrieve statistics about resource data of all resources"""
             if self.store:
                 return self.store.get_resource_data_stats(resource_attributes=resource_attributes)

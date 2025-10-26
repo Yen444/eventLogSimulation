@@ -63,16 +63,24 @@ def get_day_with_suffix(day):
     return f"{day}{suffixes.get(day % 10, 'th')}"
 
 def extract_time_parts(timestamp_str):
-    # Parse ISO 8601 timestamp
-    dt = datetime.fromisoformat(timestamp_str)
+    # Handle empty or None timestamp strings
+    if not timestamp_str or timestamp_str.strip() == '':
+        return "at an unspecified time"
+    
+    try:
+        # Parse ISO 8601 timestamp
+        dt = datetime.fromisoformat(timestamp_str)
 
-    hour = dt.strftime('%I:%M %p').lstrip('0').lower()      # e.g., '9:30 am'
-    day_name = dt.strftime('%A')                            # e.g., 'Monday'
-    day_suffix = get_day_with_suffix(dt.day)                # e.g., '1st'
-    month_name = dt.strftime('%B')                          # e.g., 'August'
-    month_with_day = f"{month_name} {day_suffix}"           # e.g., 'August 1st'
+        hour = dt.strftime('%I:%M %p').lstrip('0').lower()      # e.g., '9:30 am'
+        day_name = dt.strftime('%A')                            # e.g., 'Monday'
+        day_suffix = get_day_with_suffix(dt.day)                # e.g., '1st'
+        month_name = dt.strftime('%B')                          # e.g., 'August'
+        month_with_day = f"{month_name} {day_suffix}"           # e.g., 'August 1st'
 
-    return f"at {hour} on {day_name} in {month_with_day}"
+        return f"at {hour} on {day_name} in {month_with_day}"
+    except ValueError as e:
+        # Handle malformed timestamp strings
+        return timestamp_str
 
 
 
