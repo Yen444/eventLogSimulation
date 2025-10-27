@@ -159,6 +159,7 @@ class Coordinator(BaseModel):
                     tool_messages.append(tool_msg)
         else:
             llm_with_tools = self.llm
+            tool_output = None
         
         base_message = final_prompt.invoke({
             "process_summary": self.process_summary,
@@ -169,10 +170,11 @@ class Coordinator(BaseModel):
             'conventions':  self.conventions
         })
 
-        all_messages = [HumanMessage(content=base_message.text)] + tool_messages
+        full_messages = [HumanMessage(content=base_message.text), tool_output] + tool_messages
         
         #structured_llm = llm_with_tools.with_structured_output(ListCoordinatorOutput) 
-        #coordinator_output = structured_llm.invoke(all_messages)
+        #coordinator_output = structured_llm.invoke(full_messages)
+
         structured_llm = self.llm.with_structured_output(ListCoordinatorOutput) 
         coordinator_output = structured_llm.invoke(base_message)
 

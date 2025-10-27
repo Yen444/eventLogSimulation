@@ -49,7 +49,7 @@ class Agent(BaseModel):
         # create string from list of data attributes
         data_attributes = ', '.join(data_attributes)
         # add random text to the prompt
-        random_text = generate_random_text_with_mem_chatbot()
+        #random_text = generate_random_text_with_mem_chatbot()
         # create prompt for data
         sys_prompt = """
         You are tasked with generating realistic and coherent data for a person with the role of {role}.
@@ -107,12 +107,13 @@ class Agent(BaseModel):
         else:
             llm_with_tools = llm
             tool_messages = []
+            tool_output = None
 
         structured_llm = llm_with_tools.with_structured_output(data_model)
 
         # Now build final messages including any tool messages and invoke structured LLM to get final data
         base_messages = prompt.invoke({"role": self.role, "data_attributes": data_attributes, "organization_context": organization_context})
-        full_messages = [HumanMessage(content=base_messages.text)] + tool_messages
+        full_messages = [HumanMessage(content=base_messages.text), tool_output] + tool_messages
         final_output = structured_llm.invoke(full_messages)
         data =  ", ".join(f"{k}: {v}" for k, v in final_output.model_dump().items())
 
@@ -223,13 +224,14 @@ class Agent(BaseModel):
         else:
             llm_with_tools = llm
             tool_messages = []
+            tool_output = None
 
         structured_llm = llm_with_tools.with_structured_output(data_model)
 
 
         # Now produce final data using any collected tool messages
         base_messages = prompt.invoke({"role": self.role, "data_attributes": data_attributes, "organization_context": organization_context, "org_agents": org_agents, "random_text": random_text})
-        full_messages = [HumanMessage(content=base_messages.text)] + tool_messages
+        full_messages = [HumanMessage(content=base_messages.text), tool_output] + tool_messages
         final_output = structured_llm.invoke(full_messages)
         data =  ", ".join(f"{k}: {v}" for k, v in final_output.model_dump().items())
 
@@ -360,10 +362,12 @@ class Agent(BaseModel):
         **Read the process summary carefully, read the message from the coordinator, see what actions you can take, and think logically about what you can do next.**
         **Sometimes you're overloaded with so many other tasks or with your life. If you can't do your assigned task, just specifiy the reason in the message field and leave other fields empty.**
         **Be active: Even if you've only been assigned one action by the coordinator, take the initiative. Based on the process summary, your allowed actions, and the nature of those actions (e.g., quick tasks often performed in sequence), after taking your assigned action, identify and perform any consecutive actions that logically follow. Be proactive—move the process forward when it makes sense.**
+        **Be logical: If the coordinator instructs you to perform a task that is already completed or currently impossible given the process state, apply local reasoning. Evaluate the situation and determine whether another meaningful action can be taken to maintain process coherence. If no sensible next step exists, refrain from acting rather than following the instruction blindly or performing redundant actions.**
         **Be aware: If you've been assigned an activity which you think is not suitable for that process (basing on the process summary and the process state), you can decide to take other action rather than the assigned one (if that action is suitable), or you can choose not to take any action at all.**
         **Process ID: Don't create process_id by yourself, always use the one given to you in the process state.**
-        **Process ID: Don't leave it empty if it is given to you in the process state.**
-        **Data: data values must be diverse, random, and meaningful. Avoid repeating the same values for different cases and events.**
+        **Process ID: If the process state is empty, leave the process_id empty.**
+        **Data: Data values must be diverse, random, and meaningful. Use the statistics given to you as tool messages to output more diverse, random, and meaningful values.** 
+        **Data: Avoid repeating the same values for different cases and events.**
         
         """
         return prompt
@@ -482,6 +486,7 @@ class Agent(BaseModel):
                     
         else:
             llm_with_tools = llm
+            tool_output = None
 
         # Add tool call messages to the prompt to produce final output.
         structured_llm = llm_with_tools.with_structured_output(output_model)
@@ -498,7 +503,7 @@ class Agent(BaseModel):
         })
 
         # 2. Append tool output messages
-        full_messages = [HumanMessage(content=base_messages.text)] + tool_messages
+        full_messages = [HumanMessage(content=base_messages.text), tool_output] + tool_messages
 
         # 3. Invoke the chat model with the full message list
         agent_outputs = structured_llm.invoke(full_messages)
@@ -658,7 +663,12 @@ class Agent(BaseModel):
 
             #print(f'Structured Modified action: {modified_agent_output}')
             
-            modified_agent_outputs.append(modified_agent_output.agent_outputs[0])
+            # Check if agent_outputs contains any elements before accessing [0]
+            if modified_agent_output.agent_outputs and len(modified_agent_output.agent_outputs) > 0:
+                modified_agent_outputs.append(modified_agent_output.agent_outputs[0])
+            else:
+                # If no modified output is generated, keep the original action
+                modified_agent_outputs.append(action)
 
         #print(modified_agent_outputs)
         #print('\n')

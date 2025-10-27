@@ -253,6 +253,13 @@ class ProcessManagerDB:
             
             last_event = events[-1]
             last_timestamp = last_event.get('end_timestamp')
+            
+            # Clean timestamp string by removing markdown code block formatting
+            # TODO: more robust cleaning if needed
+            if last_timestamp:
+                last_timestamp = last_timestamp.strip('`')
+            
+            print(last_timestamp, current_time)
         
             if last_timestamp and datetime.fromisoformat(last_timestamp) <= current_time:
                 actions_with_timestamps = [f"{e.get('action') or e.get('message') or 'unknown'} at {e.get('end_timestamp', '')}" for e in events]

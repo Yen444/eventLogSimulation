@@ -187,7 +187,7 @@ class SimulationEngine:
                 else:
                     return True, 'ok'
     
-    def _step(self, agent: Agent, process_id, current_time, message, trigger, reflect, combined_iteration=None):
+    def _step(self, agent: Agent, process_id, current_time, message, trigger, reflect, combined_iteration):
         """Run a single step of the simulation.
 
         This method is intended as an internal helper. Use `run` to drive the
@@ -217,7 +217,8 @@ class SimulationEngine:
                 message=message,
                 output_model=self.agent_manager.ListAgentOutput,
                 reflect=reflect,
-                conventions=conventions
+                conventions=conventions,
+                llm=self.llm
             )
             if out is None or not getattr(out, 'agent_outputs'):
                 #print(f"Agent {getattr(agent, 'id', 'unknown')} produced no outputs")
@@ -229,7 +230,7 @@ class SimulationEngine:
     def _handle_coordinator_outputs(self, coordinator_outputs, current_time, combined_iteration, trigger, process_state):
         """Helper function to handle coordinator outputs."""
         for j, coordinator_output in enumerate(coordinator_outputs.coordinator_outputs):
-            process_id = coordinator_output.process_id
+            process_id = coordinator_output.process_id if trigger is False else None
             agent_id = coordinator_output.agent_id
             agent_role = coordinator_output.agent_role
             message = coordinator_output.message

@@ -70,7 +70,7 @@ def filter_complete_processes(tiny_db_json_path):
 
     return completed_ids
 
-def check_characteristics(event_log: pd.DataFrame):
+def check_characteristics(event_log: pd.DataFrame, outfile=None):
     """
     Characteristic 1: "Female employees take more time to complete tasks than male employees."
     Visualize with a boxplot using matplotlib only.
@@ -106,7 +106,12 @@ def check_characteristics(event_log: pd.DataFrame):
     plt.title('Task Duration by Gender')
     plt.ylabel('Duration (seconds)')
     plt.xlabel('Gender')
-    plt.show()
+    
+    if outfile is not None:
+        plt.savefig(outfile, bbox_inches='tight', dpi=300)
+        plt.close()
+    else:
+        plt.show()
 
     # Print mean durations for reference
     mean_duration = df.groupby('gender')['duration'].mean()
@@ -285,7 +290,7 @@ def pretty_print_attribute_variability(variability: Dict[str, Any], max_values: 
 
 
 # Numeric columns (handles floats as strings)
-def plot_numeric_distributions(gen_df, gen_attr, real_df, real_attr, bins=20):
+def plot_numeric_distributions(gen_df, gen_attr, real_df, real_attr, bins=20, outfile=None):
     """
     Plots overlapping histograms and KDEs for two numeric columns using matplotlib.
     """
@@ -313,9 +318,14 @@ def plot_numeric_distributions(gen_df, gen_attr, real_df, real_attr, bins=20):
     plt.ylabel('Density')
     plt.title(f'Distribution of {gen_attr} (Generated) and {real_attr} (Real)')
     plt.legend()
-    plt.show()
+    
+    if outfile is not None:
+        plt.savefig(outfile, bbox_inches='tight', dpi=300)
+        plt.close()
+    else:
+        plt.show()
 
-def plot_numeric_distribution(df, attr, bins=20, color='blue', label='Data'):
+def plot_numeric_distribution(df, attr, bins=20, color='blue', label='Data', outfile=None):
     """
     Plots histogram and KDE for a single numeric column using matplotlib.
     """
@@ -343,10 +353,15 @@ def plot_numeric_distribution(df, attr, bins=20, color='blue', label='Data'):
     plt.title(f'Distribution of {attr}')
     plt.legend()
     plt.grid(True, alpha=0.3)
-    plt.show()
+    
+    if outfile is not None:
+        plt.savefig(outfile, bbox_inches='tight', dpi=300)
+        plt.close()
+    else:
+        plt.show()
 
 # String/categorical columns
-def plot_string_distributions(gen_df, gen_attr, real_df, real_attr, top_n=10):
+def plot_string_distributions(gen_df, gen_attr, real_df, real_attr, top_n=10, outfile=None):
     """
     Plots overlapping bar charts for two string/categorical columns using matplotlib.
     """
@@ -367,9 +382,14 @@ def plot_string_distributions(gen_df, gen_attr, real_df, real_attr, top_n=10):
     plt.title(f'Distribution of {gen_attr} (Generated) and {real_attr} (Real)')
     plt.legend()
     plt.tight_layout()
-    plt.show()
+    
+    if outfile is not None:
+        plt.savefig(outfile, bbox_inches='tight', dpi=300)
+        plt.close()
+    else:
+        plt.show()
 
-def plot_string_distribution(df, attr, top_n=10, color='blue', label='Data', normalize=True):
+def plot_string_distribution(df, attr, top_n=10, color='blue', label='Data', normalize=True, outfile=None):
     """
     Plots bar chart for a single string/categorical column using matplotlib.
     
@@ -380,6 +400,7 @@ def plot_string_distribution(df, attr, top_n=10, color='blue', label='Data', nor
     - color: bar color
     - label: label for the data
     - normalize: if True, show proportions; if False, show counts
+    - outfile: optional file path to save the plot
     """
     if attr not in df.columns:
         print(f"Column '{attr}' not found in DataFrame")
@@ -414,7 +435,12 @@ def plot_string_distribution(df, attr, top_n=10, color='blue', label='Data', nor
     plt.legend()
     plt.tight_layout()
     plt.grid(True, alpha=0.3, axis='y')
-    plt.show()
+    
+    if outfile is not None:
+        plt.savefig(outfile, bbox_inches='tight', dpi=300)
+        plt.close()
+    else:
+        plt.show()
 
 def generate_process_model(log_df, case_id_col, activity_col, timestamp_col, noise_threshold, out_file=None):
     """
