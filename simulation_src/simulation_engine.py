@@ -8,6 +8,7 @@ from .tinydb_store import TinyDBStore
 
 from .prompt_manager import create_prompt_manager
 from .process_manager_db import ProcessManagerDB, logEvent
+from .tool_manager import ToolManager
 
 import datetime
 import os
@@ -51,9 +52,10 @@ class SimulationEngine:
         self.use_tools = use_tools
         self.agent_data_creation_reflect = agent_data_creation_reflect
 
-        # create AgentManager and pass the shared store so it can register/get agents from DB
+        # tool manager and agent manager
         self.llm = llm
-        self.agent_manager = AgentManager(config_manager=self.config_manager, prompt_manager=self.prompt_manager, store=self.store, llm=self.llm, use_tools=self.use_tools, agent_data_creation_reflect=self.agent_data_creation_reflect)
+        self.tool_manager = ToolManager(llm=self.llm, db_store=self.store, prompt_manager=self.prompt_manager, use_tools=self.use_tools)
+        self.agent_manager = AgentManager(config_manager=self.config_manager, prompt_manager=self.prompt_manager, store=self.store, llm=self.llm, use_tools=self.use_tools, agent_data_creation_reflect=self.agent_data_creation_reflect, tool_manager=self.tool_manager)
 
         self.protocol_path = protocol_path
         self.arrivals = arrivals # List of tuple of simulated arrival (timestamp, lamda)

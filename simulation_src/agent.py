@@ -8,6 +8,7 @@ from .llm_utils import generate_random_text_with_mem_chatbot
 from .utils import extract_time_parts
 from .config_manager import ConfigManager
 from .prompt_manager import PromptManager
+from .tool_manager import ToolManager
 
 from dotenv import load_dotenv
 import os
@@ -41,10 +42,9 @@ class Agent(BaseModel):
     role: str = Field(description="Role of the agent")
     data: Optional[str] = Field(default=None, description="Data related to the agent")
     actions: List[str] = Field(default_factory=list, description="List of actions the agent can perform")
-    action_fewshots: List[Dict[str, Any]] = Field(default_factory=list, description="Fewshot examples for the agents taking suitable actions")
     llm: Optional[Any] = Field(default=None, description="LLM instance to use for this agent (optional). If not provided, pass llm into methods.")
-    tools: Optional[List[Any]] = Field(default=None, description="Tools the agent can use (optional)")
     prompt_manager: Optional[PromptManager] = Field(default=None, description="PromptManager instance for accessing prompts and fewshots")
+    tool_manager: Optional[ToolManager] = Field(default=None, description="Tool manager for accessing tools")
     
     def generate_data_onfly(self, organization_context, data_model: BaseModel, llm, reflect=True):
         data_attributes = data_model.model_fields.keys()
@@ -61,8 +61,9 @@ class Agent(BaseModel):
         prompt = PromptTemplate.from_template(sys_prompt)
 
         # tool call 
-        if self.tools:
-            llm_with_tools = llm.bind_tools(self.tools)
+        if self.tool_manager and self.tool_manager.is_enabled():
+            tools = self.tool_manager.get_stats_tool(name='get_resource_data_stats')
+            llm_with_tools = llm.bind_tools(tools)
             # separate tool call prompt
             tool_prompt = self.prompt_manager.get_prompt(file_name="agent_data_generation", prompt_name="data_generation_tool_call", data="template")
             tool_prompt = PromptTemplate.from_template(tool_prompt)
@@ -124,8 +125,9 @@ class Agent(BaseModel):
         prompt = PromptTemplate.from_template(sys_prompt)
 
         # tool call
-        if self.tools:
-            llm_with_tools = llm.bind_tools(self.tools)
+        if self.tool_manager and self.tool_manager.is_enabled():
+            tools = self.tool_manager.get_stats_tool(name='get_resource_data_stats')
+            llm_with_tools = llm.bind_tools(tools)
             # separate tool call prompt
             tool_prompt = self.prompt_manager.get_prompt(file_name="org_agent_data_generation", prompt_name="data_generation_tool", data="template")
             tool_prompt = PromptTemplate.from_template(tool_prompt)
@@ -248,8 +250,9 @@ class Agent(BaseModel):
 
         tool_messages = []
         # Tool call
-        if self.tools:
-            llm_with_tools = llm.bind_tools(self.tools)
+        if self.tool_manager and self.tool_manager.is_enabled():
+            tools = self.tool_manager.get_stats_tool(name=['get_event_data_stats', 'get_case_data_stats', 'get_event_data_stats_by_resource'])
+            llm_with_tools = llm.bind_tools(tools)
             # separate tool call prompt
             tool_prompt = self._create_tool_call_prompt()
             tool_prompt = PromptTemplate.from_template(tool_prompt)

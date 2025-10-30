@@ -4,6 +4,7 @@ from langchain_core.prompts import PromptTemplate, FewShotPromptTemplate
 from langchain_core.messages import HumanMessage
 
 from .prompt_manager import PromptManager
+from .tool_manager import ToolManager
 
 import json
 
@@ -26,9 +27,9 @@ class Coordinator(BaseModel):
     process_summary: str = Field(description="Summary of the process")
     conventions: str = Field(default="", description="Conventions to follow when assigning agents to tasks")
     llm: Any = Field(default=None, description="LLM for generating responses")
-    handoff_fewshots: List[Dict[str, str]] = Field(default_factory=list, description="Few-shot examples for handoff")
-    tools: Optional[List[Any]] = Field(default=None, description="Optional tools for the coordinator")
     prompt_manager: Optional[PromptManager] = Field(default=None, description="PromptManager instance for accessing prompts and fewshots")
+    tool_manager: Optional[ToolManager] = Field(default=None, description="ToolManager instance for managing tools")
+
 
     def hand_off(self, process_states, org_agents, external_agents, current_timestamp):
         org_agents_str = '\n'.join([f"ID: {agent.id}; (role: {agent.role}; actions: {agent.actions}; data: {agent.data})" for agent in org_agents])
@@ -68,30 +69,35 @@ class Coordinator(BaseModel):
         tool_messages = []
         
         # Add tools if available
-        if self.tools:
-            llm_with_tools = self.llm.bind_tools(self.tools)
-            tool_prompt = PromptTemplate.from_template(tool_prompt)
-            tool_chain = tool_prompt | llm_with_tools
+        if self.tool_manager and self.tool_manager.is_tool_enabled():
+            tools = self.tool_manager.get_stats_tool(name='')
+            if tools:
+                llm_with_tools = self.llm.bind_tools(tools)
+                tool_prompt = PromptTemplate.from_template(tool_prompt)
+                tool_chain = tool_prompt | llm_with_tools
 
-            tool_output = tool_chain.invoke({
-                "process_summary": self.process_summary,
-                "process_states": process_states,
-                "org_agents": org_agents_str,   
-                "external_agents": external_agents_str,
-                "current_timestamp": current_timestamp,
-                'conventions':  self.conventions
-            })
-            # get tool calls output messages
-            tool_calls = getattr(tool_output, 'tool_calls', None)
-            if tool_calls:
-                for tool_call in tool_calls:
-                    selected_tool = next(tool for tool in self.tools if tool.name.lower() == tool_call["name"].lower())
-                    if selected_tool is not None:
-                        print(f'Tool: {tool_call["name"]} is being called by llm with arguments {tool_call.get("args", tool_call.get("arguments", {}))}')
-                    else:
-                        print(f'Tool: {tool_call["name"]} not found in available tools.')
-                    tool_msg = selected_tool.invoke(tool_call)
-                    tool_messages.append(tool_msg)
+                tool_output = tool_chain.invoke({
+                    "process_summary": self.process_summary,
+                    "process_states": process_states,
+                    "org_agents": org_agents_str,   
+                    "external_agents": external_agents_str,
+                    "current_timestamp": current_timestamp,
+                    'conventions':  self.conventions
+                })
+                # get tool calls output messages
+                tool_calls = getattr(tool_output, 'tool_calls', None)
+                if tool_calls:
+                    for tool_call in tool_calls:
+                        selected_tool = next(tool for tool in self.tools if tool.name.lower() == tool_call["name"].lower())
+                        if selected_tool is not None:
+                            print(f'Tool: {tool_call["name"]} is being called by llm with arguments {tool_call.get("args", tool_call.get("arguments", {}))}')
+                        else:
+                            print(f'Tool: {tool_call["name"]} not found in available tools.')
+                        tool_msg = selected_tool.invoke(tool_call)
+                        tool_messages.append(tool_msg)
+            else:
+                llm_with_tools = self.llm
+                tool_output = None
         else:
             llm_with_tools = self.llm
             tool_output = None
@@ -107,10 +113,10 @@ class Coordinator(BaseModel):
 
         full_messages = [HumanMessage(content=base_message.text), tool_output] + tool_messages
         
-        #structured_llm = llm_with_tools.with_structured_output(ListCoordinatorOutput) 
-        #coordinator_output = structured_llm.invoke(full_messages)
+        structured_llm = llm_with_tools.with_structured_output(ListCoordinatorOutput) 
+        coordinator_output = structured_llm.invoke(full_messages)
 
-        structured_llm = self.llm.with_structured_output(ListCoordinatorOutput) 
-        coordinator_output = structured_llm.invoke(base_message)
+        #structured_llm = self.llm.with_structured_output(ListCoordinatorOutput) 
+        #coordinator_output = structured_llm.invoke(base_message)
 
         return coordinator_output

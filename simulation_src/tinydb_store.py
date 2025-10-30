@@ -584,149 +584,66 @@ class TinyDBStore:
         except Exception:
             return {}
     
-    def get_resource_data_stats(self, resource_attributes: List[str]=None) -> Dict[str, Any]:
-        """Get statistics about resource data for all org and ext agents.
-
+    def get_resource_data_stats(self, resource_attributes: List[str] = None) -> Dict[str, Any]:
+        """Compute statistics for resource data across organizational and external agents.
+        
         The resource data is stored in the attribute 'data' as a stringified dict.
         Example: '{"experience": 5, "age": 30}'
         """
         if not resource_attributes:
             return {}
 
-        try:
-            agents = self.org_agents.all() + self.ext_agents.all()
-            if not agents:
+        agents_data = {
+            'org_agents': [self._parse_stringified_dict(a.get('data')) for a in self.org_agents.all() if a.get('data')],
+            'ext_agents': [self._parse_stringified_dict(a.get('data')) for a in self.ext_agents.all() if a.get('data')]
+        }
+
+        # Remove any None or invalid parses
+        for key in agents_data:
+            agents_data[key] = [d for d in agents_data[key] if isinstance(d, dict)]
+
+        if not agents_data['org_agents'] and not agents_data['ext_agents']:
+            return {}
+
+        stats = {'org_agents': {}, 'ext_agents': {}}
+
+        def compute_stats(values: List[Any]) -> Dict[str, Any]:
+            """Compute numerical and categorical statistics for a list of values."""
+            if not values:
                 return {}
 
-            # Parse the resource data (stringified dict)
-            data_entries = []
-            for a in agents:
-                raw_data = a.get('data')
-                if not raw_data:
-                    continue
-                data = self._parse_stringified_dict(raw_data)
-                if data:
-                    data_entries.append(data)
+            # Frequency distribution
+            value_freq = {v: values.count(v) for v in set(values)}
 
-            if not data_entries:
-                return {}
-
-            stats = {}
-
-            for attr in resource_attributes:
-                values = [d.get(attr) for d in data_entries if attr in d and d.get(attr) is not None]
-                if not values:
-                    continue
-
-                # Create frequency dictionary for all unique values
-                value_freq = {}
-                for v in values:
-                    value_freq[v] = value_freq.get(v, 0) + 1
-
-                # Try numeric conversion
+            # Attempt numeric conversion
+            try:
+                num_values = [float(v) for v in values]
+            except (ValueError, TypeError):
                 num_values = []
-                for v in values:
-                    try:
-                        num_values.append(float(v))
-                    except (ValueError, TypeError):
-                        pass
 
-                if len(num_values) == len(values) and num_values:
-                    stats[attr] = {
-                        'avg': statistics.mean(num_values),
-                        'min': min(num_values),
-                        'max': max(num_values),
-                        'std': statistics.pstdev(num_values) if len(num_values) > 1 else 0.0,
-                        'total_values': len(num_values),
-                        'unique_values': len(value_freq),
-                        'value_frequencies': value_freq
-                    }
-                else:
-                    stats[attr] = {
-                        'total_values': len(values),
-                        'unique_values': len(value_freq),
-                        'value_frequencies': value_freq
-                    }
+            # If all values can be converted to numeric → compute descriptive stats
+            if len(num_values) == len(values) and num_values:
+                return {
+                    'avg': statistics.mean(num_values),
+                    'min': min(num_values),
+                    'max': max(num_values),
+                    'std': statistics.pstdev(num_values) if len(num_values) > 1 else 0.0,
+                    'total_values': len(num_values),
+                    'unique_values': len(value_freq),
+                    'value_frequencies': value_freq
+                }
+            else:
+                return {
+                    'total_values': len(values),
+                    'unique_values': len(value_freq),
+                    'value_frequencies': value_freq
+                }
 
-            return stats
-
-        except Exception:
-            return {}
-            
-    def get_resource_data_stats_separate(self, resource_attributes: List[str] = None) -> Dict[str, Any]:
-        """Get separate statistics about resource data for org and ext agents.
-
-        Uses the helper `_parse_stringified_dict` to safely parse stored data.
-        Returns a dict with keys 'org_agents' and 'ext_agents'.
-        """
-        if not resource_attributes:
-            return {}
-
-        def parse_agent_data(agent_list):
-            entries = []
-            for a in agent_list:
-                raw_data = a.get('data')
-                if not raw_data:
-                    continue
-                data = self._parse_stringified_dict(raw_data)
-                if data:
-                    entries.append(data)
-            return entries
-
-        def compute_stats(data_entries):
-            if not data_entries:
-                return {}
-
-            stats = {}
+        # Compute stats for each agent group and attribute
+        for group_name, data_list in agents_data.items():
             for attr in resource_attributes:
-                values = [d.get(attr) for d in data_entries if attr in d and d.get(attr) is not None]
-                if not values:
-                    continue
+                values = [d[attr] for d in data_list if attr in d and d[attr] is not None]
+                if values:
+                    stats[group_name][attr] = compute_stats(values)
 
-                # Create frequency dictionary for all unique values
-                value_freq = {}
-                for v in values:
-                    value_freq[v] = value_freq.get(v, 0) + 1
-
-                num_values = []
-                for v in values:
-                    try:
-                        num_values.append(float(v))
-                    except (ValueError, TypeError):
-                        pass
-
-                if len(num_values) == len(values) and num_values:
-                    stats[attr] = {
-                        'avg': statistics.mean(num_values),
-                        'min': min(num_values),
-                        'max': max(num_values),
-                        'std': statistics.pstdev(num_values) if len(num_values) > 1 else 0.0,
-                        'total_values': len(num_values),
-                        'unique_values': len(value_freq),
-                        'value_frequencies': value_freq
-                    }
-                else:
-                    stats[attr] = {
-                        'total_values': len(values),
-                        'unique_values': len(value_freq),
-                        'value_frequencies': value_freq
-                    }
-            return stats
-
-        try:
-            org_agents = self.org_agents.all() if hasattr(self.org_agents, 'all') else []
-            ext_agents = self.ext_agents.all() if hasattr(self.ext_agents, 'all') else []
-
-            org_data_entries = parse_agent_data(org_agents)
-            ext_data_entries = parse_agent_data(ext_agents)
-
-            org_stats = compute_stats(org_data_entries)
-            ext_stats = compute_stats(ext_data_entries)
-
-            return {
-                'org_agents': org_stats,
-                'ext_agents': ext_stats
-            }
-
-        except Exception:
-            return {}
+        return stats
