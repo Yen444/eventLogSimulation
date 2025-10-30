@@ -37,10 +37,10 @@ llm_openai = ChatOpenAI(
 
 
 class SimulationEngine:
-    def __init__(self, llm, config_path, log_path, protocol_path, db_path, arrivals, use_fewshots: bool = True, use_tools: bool = True, agent_data_creation_reflect: bool = False, action_reflect: bool = True):
+    def __init__(self, llm, config_path, log_path, protocol_path, db_path, arrivals, use_tools: bool = True, agent_data_creation_reflect: bool = False, action_reflect: bool = True, prompt_base_dir: str = './prompts'):
         self.config_manager = ConfigManager(config_path=config_path)
-        # create a PromptManager and pass it to AgentManager
-        prompt_manager = create_prompt_manager(use_fewshots=use_fewshots)
+        # create a PromptManager and store it as instance variable for potential reuse
+        self.prompt_manager = create_prompt_manager(base_dir=prompt_base_dir)
         # create a single TinyDBStore and share it between AgentManager and ProcessManagerDB
         self.store = TinyDBStore(db_path)
 
@@ -53,7 +53,7 @@ class SimulationEngine:
 
         # create AgentManager and pass the shared store so it can register/get agents from DB
         self.llm = llm
-        self.agent_manager = AgentManager(config_manager=self.config_manager, prompt_manager=prompt_manager, store=self.store, llm=self.llm, use_tools=self.use_tools, agent_data_creation_reflect=self.agent_data_creation_reflect)
+        self.agent_manager = AgentManager(config_manager=self.config_manager, prompt_manager=self.prompt_manager, store=self.store, llm=self.llm, use_tools=self.use_tools, agent_data_creation_reflect=self.agent_data_creation_reflect)
 
         self.protocol_path = protocol_path
         self.arrivals = arrivals # List of tuple of simulated arrival (timestamp, lamda)

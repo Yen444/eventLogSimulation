@@ -7,6 +7,7 @@ from langchain_core.messages import HumanMessage
 from .llm_utils import generate_random_text_with_mem_chatbot
 from .utils import extract_time_parts
 from .config_manager import ConfigManager
+from .prompt_manager import PromptManager
 
 from dotenv import load_dotenv
 import os
@@ -43,34 +44,14 @@ class Agent(BaseModel):
     action_fewshots: List[Dict[str, Any]] = Field(default_factory=list, description="Fewshot examples for the agents taking suitable actions")
     llm: Optional[Any] = Field(default=None, description="LLM instance to use for this agent (optional). If not provided, pass llm into methods.")
     tools: Optional[List[Any]] = Field(default=None, description="Tools the agent can use (optional)")
+    prompt_manager: Optional[PromptManager] = Field(default=None, description="PromptManager instance for accessing prompts and fewshots")
     
     def generate_data_onfly(self, organization_context, data_model: BaseModel, llm, reflect=True):
         data_attributes = data_model.model_fields.keys()
         # create string from list of data attributes
         data_attributes = ', '.join(data_attributes)
-        # add random text to the prompt
-        #random_text = generate_random_text_with_mem_chatbot()
-        # create prompt for data
-        sys_prompt = """
-        You are tasked with generating realistic and coherent data for a person with the role of {role}.
-        This individual operates outside the organization but interacts with it within a business process context.
-
-        Organizational context:
-        {organization_context}
-
-        Please generate plausible values for the following attributes: {data_attributes}.
-
-        Guidelines:
-        - Ensure all values are internally consistent and appropriate for the specified role and organizational context.
-        - Emphasize diversity, plausibility, and details specific to the role.
-        - Make sure the data is diverse, e.g. do not always generate the same name, age, gender, etc.
-        
-        Return the output in a clearly structured format, listing each attribute and its corresponding value:
-        - <attribute>: <value>
-        - <attribute>: <value>
-        - ...
-        """
-
+        # fetch prompt template
+        sys_prompt = self.prompt_manager.get_prompt(file_name="agent_data_generation", prompt_name="data_generation", data="template")
         # allow passing llm per-call or use the agent's llm
         if llm is None:
             llm = self.llm
@@ -79,17 +60,11 @@ class Agent(BaseModel):
 
         prompt = PromptTemplate.from_template(sys_prompt)
 
-        # Prepare llm and separate tool chain like in _take_action
+        # tool call 
         if self.tools:
             llm_with_tools = llm.bind_tools(self.tools)
-            # create a simple tool prompt for data generation tools
-            tool_prompt = f"""
-            You are an agent helper to gather auxiliary information for data generation.
-            Your ultimate goal is to generate realistic and non-overlapping data for a person within an organization.
-            The data should include the following attributes: {{data_attributes}}
-            To ensure the generated values are both realistic and distinct, you may need to collect statistics or other supporting information about these data attributes across all organizational resources.
-            Use the available tools — especially the get_resource_data_stats — to fetch relevant statistics across all data attributes to inform the data generation.
-            """
+            # separate tool call prompt
+            tool_prompt = self.prompt_manager.get_prompt(file_name="agent_data_generation", prompt_name="data_generation_tool_call", data="template")
             tool_prompt = PromptTemplate.from_template(tool_prompt)
             tool_chain = tool_prompt | llm_with_tools
             tool_output = tool_chain.invoke({"organization_context": organization_context, "data_attributes": data_attributes})
@@ -111,54 +86,25 @@ class Agent(BaseModel):
 
         structured_llm = llm_with_tools.with_structured_output(data_model)
 
-        # Now build final messages including any tool messages and invoke structured LLM to get final data
+        # give tool messages to final data generation
         base_messages = prompt.invoke({"role": self.role, "data_attributes": data_attributes, "organization_context": organization_context})
         full_messages = [HumanMessage(content=base_messages.text), tool_output] + tool_messages
         final_output = structured_llm.invoke(full_messages)
         data =  ", ".join(f"{k}: {v}" for k, v in final_output.model_dump().items())
 
         if not reflect:
-            # write to data values
             self.data = data
             return
+        
+        # reflect if needed
 
-        sys_prompt_reflect = """
-        You are tasked with reviewing and refining personal data for a person with the role of {role} who interacts with the organization externally within a business process context.
-
-        Organizational context:
-        {organization_context}
-
-        You have been provided with initial data that may contain generic, unrealistic, or placeholder values. Your goal is to revise these entries to ensure the data is realistic, coherent, and appropriate for the given role and organizational context.
-
-        Guidelines:
-        - Avoid generic placeholders such as "John Doe", "Jane Doe", "A. N. Other", "Test User", or similarly artificial values.
-        - Ensure all attributes are plausible, unique, and reflect real-world diversity, relevant to the person's role.
-        - Maintain consistency with the organizational culture and business process context.
-        - Ensure that the generated data does not represent any biases or stereotypes related to gender, ethnicity, age, or other personal characteristics. Strive for fair and balanced representation in all attributes.
-
-        The data should cover the following attributes: {data_attributes}.
-
-        Initial data to review and refine:
-        {data}
-
-        Keep attribute-value pairs that are already realistic and specific; only update those that are too generic, inconsistent, or implausible.
-
-        Return the final output clearly formatted, listing each attribute with its corresponding value:
-        - <attribute>: <value>
-        - <attribute>: <value>
-        - ...
-        """
-
-
+        sys_prompt_reflect = self.prompt_manager.get_prompt(file_name="agent_data_generation", prompt_name="data_generation_reflect", data="template")
         prompt_reflect = PromptTemplate.from_template(sys_prompt_reflect)
         chain_reflect = prompt_reflect | structured_llm
         data_reflect = chain_reflect.invoke({"role": self.role, "data_attributes": data_attributes, "data": data,  "organization_context": organization_context})
-    
         data_reflect = ", ".join(f"{k}: {v}" for k, v in data_reflect.model_dump().items())
         self.data = data_reflect
         
-        #print(f'First generated data: {data}, role: {self.role}')
-        #print(f'Regenerated data: {data_reflect}, role: {self.role}')
 
     def generate_data(self, organization_context, org_agents, data_model: BaseModel, llm: Optional[Any] = None, reflect=False):
         data_attributes = data_model.model_fields.keys()
@@ -167,26 +113,7 @@ class Agent(BaseModel):
         # add random text to the prompt
         random_text = generate_random_text_with_mem_chatbot()
         # create prompt for data
-        sys_prompt = """
-        You are tasked with generating realistic and coherent data for a person with the role of {role} within an organization.
-
-        The organizational context is as follows: {organization_context}.
-
-        Generate plausible values for the following attributes: {data_attributes}. Ensure the values are internally consistent and appropriate for the given role and organizational context.
-
-        Guidelines:
-        - Avoid generic placeholders such as "John Doe", "Jane Doe", "A. N. Other", "Test User", or similarly artificial values.
-        - Ensure all attributes are plausible, unique, and reflect real-world diversity, relevant to the person's role.
-        - Maintain consistency with the organizational culture and business process context.
-        - Ensure that the generated data does not represent any biases or stereotypes related to gender, ethnicity, age, or other personal characteristics. Strive for fair and balanced representation in all attributes.
-
-        When generating this person's information, take into account the existing members of the organization to avoid unrealistic overlaps. For instance, if there are already two employees named Alice who are 30 years old, avoid adding a third with the same name and age. You can retrieve the statistics of existing members from the organizational database.
-
-        Return the output in a clearly structured format, listing each attribute and its corresponding value:
-        - <attribute>: <value>
-        - <attribute>: <value>
-        - ...
-        """
+        sys_prompt = self.prompt_manager.get_prompt(file_name="org_agent_data_generation", prompt_name="data_generation", data="template")
 
         # allow passing llm per-call or use the agent's llm
         if llm is None:
@@ -196,17 +123,11 @@ class Agent(BaseModel):
 
         prompt = PromptTemplate.from_template(sys_prompt)
 
-        # Prepare llm and separate tool chain
+        # tool call
         if self.tools:
             llm_with_tools = llm.bind_tools(self.tools)
-            # create a tool prompt to gather auxiliary info for generation
-            tool_prompt = f"""
-            You are an agent helper to gather auxiliary information for data generation.
-            Your ultimate goal is to generate realistic and non-overlapping data for a person within an organization.
-            The data should include the following attributes: {{data_attributes}}
-            To ensure the generated values are both realistic and distinct, you may need to collect statistics or other supporting information about these data attributes across all organizational resources.
-            Use the available tools — especially the get_resource_data_stats — to fetch relevant statistics across all data attributes to inform the data generation.
-            """
+            # separate tool call prompt
+            tool_prompt = self.prompt_manager.get_prompt(file_name="org_agent_data_generation", prompt_name="data_generation_tool", data="template")
             tool_prompt = PromptTemplate.from_template(tool_prompt)
             tool_chain = tool_prompt | llm_with_tools
             tool_output = tool_chain.invoke({"organization_context": organization_context, "org_agents": org_agents, "data_attributes": data_attributes})
@@ -228,50 +149,18 @@ class Agent(BaseModel):
 
         structured_llm = llm_with_tools.with_structured_output(data_model)
 
-
-        # Now produce final data using any collected tool messages
+        # give tool messages to final data generation
         base_messages = prompt.invoke({"role": self.role, "data_attributes": data_attributes, "organization_context": organization_context, "org_agents": org_agents, "random_text": random_text})
         full_messages = [HumanMessage(content=base_messages.text), tool_output] + tool_messages
         final_output = structured_llm.invoke(full_messages)
         data =  ", ".join(f"{k}: {v}" for k, v in final_output.model_dump().items())
 
         if not reflect:
-            # write to data values
             self.data = data
             return
 
-        sys_prompt_reflect = """
-        You are tasked with reviewing and refining the personal data of a person with the role of {role} within an organization.
-
-        Organizational context:
-        {organization_context}
-
-        Existing organization members:
-        {org_agents}
-
-        You are provided with initial data that may contain generic, unrealistic, or placeholder-like values. Your goal is to revise any such entries to produce realistic, coherent, and contextually appropriate information that fits within the organization.
-
-        Guidelines:
-        - **AVOID GENERIC PLACEHOLDERS**: Do not use names like "John Doe", "Jane Doe", "A. N. Other", "Test User", or any similarly artificial values.
-        - **ENSURE REALISM & UNIQUENESS**: All attributes should reflect plausible real-world data. Names, ages, job details, etc., should be context-aware and diverse.
-        - **RESPECT CONTEXT**: Ensure that the attributes make sense given the person's role, the organization's culture, ect.
-        - **AVOID REPETITION**: Avoid duplications with existing employees (e.g., is it plausible for two employees both named Alice Bob and aged 30?)
-        - - **AVOID BIAS/STEREOTYPE**: Ensure that the generated data does not represent any biases or stereotypes related to gender, ethnicity, age, or other personal characteristics. Strive for fair and balanced representation in all attributes.
-
-        The data should include the following attributes: {data_attributes}.
-
-        Here is the initial data to be reviewed and refined:
-        {data}
-
-        Keep attribute-value pairs that are already realistic and specific. Update or replace only the ones that are too generic, inconsistent, or implausible.
-
-        Return the final output in a structured format, listing each attribute and its corresponding value:
-        - <attribute>: <value>
-        - <attribute>: <value>
-        - ...
-        """
-
-
+        # reflect if needed
+        sys_prompt_reflect = self.prompt_manager.get_prompt(file_name="org_agent_data_generation", prompt_name="data_generation_reflect", data="template")
         prompt_reflect = PromptTemplate.from_template(sys_prompt_reflect)
         chain_reflect = prompt_reflect | structured_llm
         data_reflect = chain_reflect.invoke({"role": self.role, "data_attributes": data_attributes, "data": data,  "organization_context": organization_context, "org_agents": org_agents})
@@ -281,133 +170,33 @@ class Agent(BaseModel):
 
     
     def _create_action_prompt(self):
-        """Create prompt for the agent"""
+        """Create prompt for the agent using PromptManager if available"""
+        # Try to use PromptManager first
+        if not self.prompt_manager:
+            raise ValueError("PromptManager is required for agent operation")
+            
+        # Get the template from the YAML file
+        # Default to agent_action, but can be customized later
+        template = self.prompt_manager.get_prompt('agent_action', 'agent_action', 'template')
+        
+        # Replace agent-specific placeholders with actual values
         role = self.role
         actions = ', '.join(self.actions)
         data = self.data if self.data else "No data available"
-        prompt = f"""
-        You are an agent participating in a business process.
-
-        Process Summary: {{process_summary}}  
-        Your Role: {role}  
-        Your Profile: {data}  
-        Available Actions: {actions}  
-
-        Each action may require specific data. Below is a mapping of actions to their required data fields:  
-        Action Data Mapping: {{action_data_mapping}} 
-
-        You are assigned to the following current process instance with the message from the coordinator:
-        Current Process State: {{process_state}}
-        Message: {{message}}
-        Timestamp: {{current_time}} 
-           
-
-        Based on the above information, decide whether you will take any action for the assigned process.  
-        If you will take any action, specify the process_id, the action, the start and end timestamp at which you started and finished your action, and include necessary event and case data attributes.
         
-        Some actions are easy to do, e.g. submit a claim, but some actions take time, e.g. now you need to deliver the goods but the order is only made 5 minutues before, you need to wait for the order to be done first.
-        Therefore, use your logical thinking basing on the process state to take suitable action.
-
-        When you take an action, consider the following conventions, your action must reflect the following conventions: {{conventions}}
-
-        Event Data Attributes: {{event_data_attributes}}
-        Case Data Attributes: {{case_data_attributes}}
-
-        You must output all values for the event data attributes.
-        For case data attributes, only output the values that your action requires, if any. 
-
-        *Pay attention to the kind of data attributes (nominal categorical, ordinal categorical, continuous numerical, etc.).*
-        - For continuous numerical data attributes, make sure that they are diverse, random, and continuous but still meaningful across cases and events.
-        - For categorical data attributes, make sure that they are diverse and random but still meaningful across cases and events.
-        - For ordinal categorical data attributes, make sure that they respect the scale, diverse, and meaningful.
-
-        **Please use the following structured format for each action taken:**
-
-        - process_id: ```<process_id>```  
-        - action: ```<your_chosen_action>```  
-        - start_timestamp: ```<start_timestamp_of_action>```
-        - end_timestamp: ```<end_timestamp_of_action>```  
-        - case_data: ```<case_data_attribute_1>: <case_data_value_1>, <case_data_attribute_2>: <case_data_value_2>, ...```  
-        - event_data: ```<event_data_attribute_1>: <event_data_value_1>, <event_data_attribute_2>: <event_data_value_2>, ...```
-        - message: ```<your_message>```
-        - end_action: ```<True> or <False>```
-
-        **If you think you can't finish any action**
-        - Leave the `action` field and other fields empty.
-        
-        **Message should be a short description of what you did, your decision, or any other relevant information. If you can't take the action at the moment (because you have to wait for something or you're overloaded, etc.), specify the reasons.**
-
-        **Only output the data needed for the action you will take, which is specified in the action data mapping above, leave other attributes empty if it is not required for that action**
-
-        **Output a suitable timestamp for the action you will finish. The timestamp must satisfy all of the following conditions:**
-        - It must not be earlier than the timestamp you're assigned to.
-
-        **If the current process state is empty, which means you're the first one to take action to initialize the process"
-        - Leave the process_id empty and output the other fields like described.
-        - Take the first action in the process to initialize the process like described in the process summary (or in the message).
-
-        **If the current process state is not empty, which means there is already a process_id**
-        - Output the correct process_id like the one given to you (in the process state) and output the other fields like described.
-        - REMEMBER: YOU MUST ALWAYS OUTPUT THE PROCESS_ID GIVEN TO YOU IN THE PROCESS_STATE, OTHERWISE THE PROCESS WILL BE BROKEN.
-
-        **If you finish multiple actions:**
-        - Repeat the above structured format for each action.
-
-        **If you think the action you take can end the process (basing on the process summary and the process state):**
-        - Output True for end_action.
-        - Otherwise, output False.
-
-        **You can take consecutive actions for one process and same actions for different processes, depending on the process and process states you're given.**
-
-        **Read the process summary carefully, read the message from the coordinator, see what actions you can take, and think logically about what you can do next.**
-        **Sometimes you're overloaded with so many other tasks or with your life. If you can't do your assigned task, just specifiy the reason in the message field and leave other fields empty.**
-        **Be active: Even if you've only been assigned one action by the coordinator, take the initiative. Based on the process summary, your allowed actions, and the nature of those actions (e.g., quick tasks often performed in sequence), after taking your assigned action, identify and perform any consecutive actions that logically follow. Be proactive—move the process forward when it makes sense.**
-        **Be logical: If the coordinator instructs you to perform a task that is already completed or currently impossible given the process state, apply local reasoning. Evaluate the situation and determine whether another meaningful action can be taken to maintain process coherence. If no sensible next step exists, refrain from acting rather than following the instruction blindly or performing redundant actions.**
-        **Be aware: If you've been assigned an activity which you think is not suitable for that process (basing on the process summary and the process state), you can decide to take other action rather than the assigned one (if that action is suitable), or you can choose not to take any action at all.**
-        **Process ID: Don't create process_id by yourself, always use the one given to you in the process state.**
-        **Process ID: If the process state is empty, leave the process_id empty.**
-        **Data: Data values must be diverse, random, and meaningful. Use the statistics given to you as tool messages to output more diverse, random, and meaningful values.** 
-        **Data: Avoid repeating the same values for different cases and events.**
-        
-        """
-        return prompt
+        # Replace placeholders in the template
+        template = template.replace('{role}', role).replace('{data}', data).replace('{actions}', actions)
+            
+        return template
     
     def _create_tool_call_prompt(self):
         """Create prompt for the agent to call tools"""
         role = self.role
         actions = ', '.join(self.actions)
         data = self.data if self.data else "No data available"
-        prompt = f"""
-            You are an intelligent agent participating in a business process simulation.
-
-            Your objective is to decide which actions to take and output the necessary information for those actions such as case data, event data, timestamps.
-                - You want to output diverse, random, and meaningful data values for the event data and case data attributes required for your actions.
-                - You also want to output the data that stay alligned with the conventions provided.
-            
-            To fulfill your task effectively, sometimes you may need to call analytical tools to gather necessary statistics or insights, e.g. to output one meaningful value for an attribute, you may need to get statistics for that attribute across all cases/events first.
-            
-
-            Below is your context and task:
-
-            Process Summary: {{process_summary}}  
-            Your Role: {role}  
-            Your Profile: {data}  
-            Available Actions: {actions}  
-            Action Data Mapping: {{action_data_mapping}}  
-            Process State: {{process_state}}  
-            Message from Coordinator: {{message}}  
-            Timestamp: {{current_time}}  
-            Event Data Attributes: {{event_data_attributes}}  
-            Case Data Attributes: {{case_data_attributes}}  
-            Conventions: {{conventions}}
-
-            Your task:
-            Using the given tools, and decide if you want to call any of them or not. 
-            If you want to call a tool, specify the tool name and the arguments needed.
-            You can call multiple tools if needed.
-            """
-
-
+        prompt = self.prompt_manager.get_prompt(file_name="agent_action", prompt_name="agent_action_tool_call", data="template")
+        prompt = prompt.replace('{role}', role).replace('{data}', data).replace('{actions}', actions)
+        
         return prompt
     
     def _take_action(self, output_model, llm: Optional[Any], process_summary: str, process_state: str, action_data_mapping: Dict[str, List[str]], current_time: str, event_data_attributes: List[str], case_data_attributes: List[str], message: str, conventions: List[str]):
@@ -432,7 +221,14 @@ class Agent(BaseModel):
             raise ValueError("No llm provided: pass an llm to act/_take_action or set agent.llm")
 
         prompt = self._create_action_prompt()
-        fewshot_examples = self.action_fewshots
+        
+        # Load fewshots on-demand from PromptManager
+        fewshot_examples = []
+        if self.prompt_manager:
+            fewshots = self.prompt_manager.get_fewshots('agent_action')
+            # Check if fewshots were loaded successfully (not an error list)
+            if fewshots and not (len(fewshots) == 1 and 'error' in fewshots[0]):
+                fewshot_examples = fewshots
 
         if fewshot_examples:
             # example prompt template
@@ -451,9 +247,10 @@ class Agent(BaseModel):
             final_prompt = PromptTemplate.from_template(prompt)
 
         tool_messages = []
-        # Create an llm with tools if available
+        # Tool call
         if self.tools:
             llm_with_tools = llm.bind_tools(self.tools)
+            # separate tool call prompt
             tool_prompt = self._create_tool_call_prompt()
             tool_prompt = PromptTemplate.from_template(tool_prompt)
             tool_chain = tool_prompt | llm_with_tools
@@ -488,9 +285,8 @@ class Agent(BaseModel):
             llm_with_tools = llm
             tool_output = None
 
-        # Add tool call messages to the prompt to produce final output.
+        # Add tool call messages to generate final output.
         structured_llm = llm_with_tools.with_structured_output(output_model)
-        # 1. Format the base prompt with initial variables
         base_messages = final_prompt.invoke({
             "process_summary": process_summary,
             "process_state": process_state,
@@ -501,13 +297,8 @@ class Agent(BaseModel):
             "message": message,
             "conventions":  '; '.join(conventions)
         })
-
-        # 2. Append tool output messages
         full_messages = [HumanMessage(content=base_messages.text), tool_output] + tool_messages
-
-        # 3. Invoke the chat model with the full message list
         agent_outputs = structured_llm.invoke(full_messages)
-
 
         return agent_outputs, tool_messages
     
@@ -516,85 +307,9 @@ class Agent(BaseModel):
         role = self.role
         actions = ', '.join(self.actions)
         data = self.data if self.data else "No data available"
-        modify_prompt = f"""
-        You are a reflective agent reviewing your previously decided actions in a business process.
-
-        Here is a summary of the situation:
-        - Process Summary: {{process_summary}}
-        - Your Role: {role}
-        - Your Profile: {data}
-        - Available Actions: {actions}
-
-        Contextual Information:
-        - Current Timestamp: {{current_time}}
-        - Current Process State: {{process_state}}
-
-        You planned to finish the following action:
-        {{previous_action}}
-
-        You need to follow the following biases:
-        {{conventions}}
-
-        Event Data Attributes: {{event_data_attributes}}
-        Case Data Attributes: {{case_data_attributes}}
-
-        Some provided statistics from the database for reference (if any):
-        {{tool_messages}}
-
-        **Your Task:**
-        Evaluate the *appropriateness* of the previously proposed action based on the timestamps, case data, and event data associated with that action. For the action, assess the following:
-
-        1. **Are the timestamps appropriate:**  
-        - Does the start and end timestamps fall within a typical and reasonable time window for work-related activities?  
-        - Avoid suggesting actions during biologically or culturally inappropriate times, such as deep night hours, unless explicitly justified by the context.
-        - Ask yourself questions like are you working on Saturday and Sunday?
-
-        2. **Personal Feasibility:**  
-        - Are you, given your role and demographic profile, realistically able to complete the action at the specified timestamps?  
-        - Consider your energy levels, time availability, and workload distribution. If the timestamps are likely to hinder your ability to complete the action effectively, mark it as inappropriate.
-
-        **For each action, determine whether its timestamps are both appropriate and personally feasible:**
-        - If the action meets both criteria, keep the timestamps for that action.
-        - If it fails either criterion, modify the timestamps to a more appropriate value.
-
-        3. **Case data and event data appropriateness:**
-        - Is it meaningful and plausible?
-        - Is it diverse and realistic? You can refer to the provided statistics from the database (if any)?
-        - Pay attention to the kind of data attributes (nominal categorical, ordinal categorical, continuous numerical, etc.).
-        - For continuous numerical data attributes, make sure that they are diverse, random, and continuous but still meaningful across cases and events.
-        - For categorical data attributes, make sure that they are diverse and random but still meaningful across cases and events.
-        - For ordinal categorical data attributes, make sure that they respect the scale, diverse, and meaningful.
-        
-        **For each case data and event data value provided:**
-        - If the data value is appropriate, diverse, random enough, and meaningful, keep it as is.
-        - If any of the data values do not meet the criteria, you can modify them to be more diverse, random, and meaningful.
-        - You have to take the kind of data attributes into consideration, numerical data are more diverse than categorical data. However, categorical data can also be diverse and random at a certain level. 
-        - Use the provided statistics for your reference (if any).
-
-        4. **End Action:**
-        - Basing on the process summary, is it appropriate to end the process with this action?
-        - If yes, keep it as True.
-        - If no, change it to False.
-
-        NOTE: 
-        - Do NOT modify *PROCESS_ID*, *ACTION*, or *MESSAGE*. Keep their values exactly as they are. Because you're only verifying the timestamps, case data, event data, and end_action field.
-        - Either retain their current values or update them to more appropriate ones.
-        - Do NOT set them to empty values, except if they were initially empty.
-
-        **Output format:**
-        - process_id: ```<process_id>```  
-        - action: ```<your_chosen_action>```  
-        - start_timestamp: ```<start_timestamp_of_action>```
-        - end_timestamp: ```<end_timestamp_of_action>```  
-        - case_data: ```<case_data_attribute_1>: <case_data_value_1>, <case_data_attribute_2>: <case_data_value_2>, ...```  
-        - event_data: ```<event_data_attribute_1>: <event_data_value_1>, <event_data_attribute_2>: <event_data_value_2>, ...```
-        - message: ```<your_message>```
-        - end_action: ```<True> or <False>```
-
-        """
+        modify_prompt = self.prompt_manager.get_prompt(file_name="agent_action", prompt_name="agent_action_modify", data="template")
+        modify_prompt = modify_prompt.replace('{role}', role).replace('{data}', data).replace('{actions}', actions)
         return modify_prompt
-
-    
 
     def act(self, output_model, llm: Optional[Any] = None, process_summary: str = "", process_state: str = "", action_data_mapping: Dict[str, List[str]] = None, current_time: str = "", event_data_attributes: List[str] = None, case_data_attributes: List[str] = None, message: str = "", conventions: str = "", reflect=True):
             
@@ -627,11 +342,7 @@ class Agent(BaseModel):
         tool_messages_str = [tool_msg.content for tool_msg in tool_messages]
 
         modified_agent_outputs = []
-        #print(actions)
-        #print('\n')
         for action in actions.agent_outputs:
-            #print(f'Original action: {action}')
-            #print('\n')
             start_timestamp_str = extract_time_parts(action.start_timestamp)
             end_timestamp_str = extract_time_parts(action.end_timestamp)
             action_string = (
@@ -643,8 +354,6 @@ class Agent(BaseModel):
                 f'message: {action.message}, '
                 f'end_action: {action.end_action}'
             )
-            #print(f'Action string for modification: {action_string}')
-            #print('\n')
             modified_agent_output = chain.invoke({
                 "process_summary": process_summary,
                 "process_state": process_state,
@@ -655,13 +364,6 @@ class Agent(BaseModel):
                 "case_data_attributes": '; '.join(f"{k} → {v}" for k, v in case_data_attributes.items()),
                 "tool_messages": "\n".join(tool_messages_str)
             })
-            #print(f'Unstructured Modified action: {modified_agent_output}')
-            #print('\n')
-
-            
-            #modified_agent_output = structured_llm.invoke(modified_agent_output.content)
-
-            #print(f'Structured Modified action: {modified_agent_output}')
             
             # Check if agent_outputs contains any elements before accessing [0]
             if modified_agent_output.agent_outputs and len(modified_agent_output.agent_outputs) > 0:
@@ -670,11 +372,7 @@ class Agent(BaseModel):
                 # If no modified output is generated, keep the original action
                 modified_agent_outputs.append(action)
 
-        #print(modified_agent_outputs)
-        #print('\n')
-        #actions.agent_outputs = None
         actions.agent_outputs = modified_agent_outputs
-        #print(actions)
         
         return actions
 

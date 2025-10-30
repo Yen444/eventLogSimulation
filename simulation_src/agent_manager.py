@@ -3,7 +3,6 @@ from typing import List, Dict, Optional, Any
 from langchain_core.prompts import PromptTemplate
 
 
-from .llm_utils import generate_random_text_with_mem_chatbot
 from .utils import generate_random_agent_id
 from .config_manager import ConfigManager
 from .agent import Agent
@@ -149,8 +148,8 @@ class AgentManager:
                             id=existing['id'],
                             role=existing['role'],
                             actions=existing.get('actions', []),
-                            action_fewshots=self.prompt_manager.get_fewshots('agent_action'),
                             llm=self.llm,
+                            prompt_manager=self.prompt_manager,
                             tools=(
                                 [
                                     self.get_tool(name="get_event_data_stats"),
@@ -177,8 +176,8 @@ class AgentManager:
                     id=agent_id,
                     role=agent_role,
                     actions=actions,
-                    action_fewshots=self.prompt_manager.get_fewshots('agent_action'),
                     llm=self.llm,
+                    prompt_manager=self.prompt_manager,
                     tools=(
                         [
                             self.get_tool(name="get_event_data_stats"),
@@ -218,8 +217,8 @@ class AgentManager:
             id=agent_id,
             role=role,
             actions=actions,
-            action_fewshots=self.prompt_manager.get_fewshots('agent_action'),
             llm=self.llm,
+            prompt_manager=self.prompt_manager,
             tools=(
                 [
                     self.get_tool(name="get_event_data_stats"),
@@ -252,7 +251,6 @@ class AgentManager:
                 process_summary=existing.get('process_summary', ''),
                 llm=self.llm,
                 conventions=existing.get('conventions', ''),
-                handoff_fewshots=self.prompt_manager.get_fewshots('coordinator_handoff'),
                 tools=(
                     [
                         self.get_tool(name="get_event_data_stats"),
@@ -260,7 +258,8 @@ class AgentManager:
                         self.get_tool(name="get_event_data_stats_by_resource"),
                         self.get_tool(name="get_resource_data_stats")
                     ] if self.use_tools else None
-                )
+                ),
+                prompt_manager=self.prompt_manager
             )
             return
         
@@ -272,7 +271,6 @@ class AgentManager:
             process_summary=process_summary,
             llm=self.llm,
             conventions=', '.join(conventions),
-            handoff_fewshots=self.prompt_manager.get_fewshots('coordinator_handoff'),
             tools=(
                 [
                     self.get_tool(name="get_event_data_stats"),
@@ -280,7 +278,8 @@ class AgentManager:
                     self.get_tool(name="get_event_data_stats_by_resource"),
                     self.get_tool(name="get_resource_data_stats")
                 ] if self.use_tools else None
-            )
+            ),
+            prompt_manager=self.prompt_manager
         )
         self.coordinator = coordinator
         # register coordinator in DB if process_manager provided
