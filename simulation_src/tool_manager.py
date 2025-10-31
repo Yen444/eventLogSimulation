@@ -9,6 +9,10 @@ class ToolManager(BaseModel):
     db_store: TinyDBStore = Field(..., description="The tiny database instance for managing tools.")
     prompt_manager: PromptManager = Field(..., description="The prompt manager instance for managing prompts.")
     use_tools: bool = Field(True, description="Flag to indicate whether to use tools or not.")
+    
+    model_config = {
+        "arbitrary_types_allowed": True,
+    }
 
     def is_tool_enabled(self) -> bool:
         """Check if tool usage is enabled."""
@@ -56,7 +60,7 @@ class ToolManager(BaseModel):
         if isinstance(name, list):
             return [tool_mapping.get(n, None) for n in name]
         if isinstance(name, str):
-            return tool_mapping.get(name, None)
+            return [tool_mapping.get(name, None)]
         return None
 
     

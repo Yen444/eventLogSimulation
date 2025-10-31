@@ -68,6 +68,7 @@ class AgentManager:
             event_data=(Optional[event_data_model], None),
             case_data=(Optional[case_data_model], None),
             end_action=(Optional[bool], None),
+            reasoning=(Optional[str], None),
             __base__=BaseModel,
         )
         
@@ -263,6 +264,7 @@ class AgentManager:
                     try:
                         agent.llm = self.llm
                         agent.tool_manager = self.tool_manager
+                        agent.prompt_manager = self.prompt_manager
                     except Exception:
                         pass
                     return agent
@@ -276,6 +278,7 @@ class AgentManager:
                 try:
                     a.llm = a.llm or self.llm
                     a.tool_manager = self.tool_manager
+                    a.prompt_manager = self.prompt_manager
                 except Exception:
                     pass
                 return a

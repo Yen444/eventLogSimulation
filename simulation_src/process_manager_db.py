@@ -70,7 +70,7 @@ class ProcessManagerDB:
         # use newline='' to avoid extra blank lines on Windows
         with open(self.log_path, 'a', newline='', encoding='utf-8') as f:
             # store combined iteration id as iteration_sub (e.g. 0_0, 0_1)
-            fieldnames = ["iteration_id", "process_id", "action", "agent_id", "start_timestamp", "end_timestamp", "agent_role", "agent_data", "case_data", "event_data", "message", "end_action", "process_state"]
+            fieldnames = ["iteration_id", "process_id", "action", "agent_id", "start_timestamp", "end_timestamp", "agent_role", "agent_data", "case_data", "event_data", "message", "reasoning", "end_action", "process_state"]
             writer = csv.DictWriter(f, fieldnames=fieldnames)
             # if the file is empty, write header first
             if f.tell() == 0:
@@ -87,6 +87,7 @@ class ProcessManagerDB:
                 "event_data": data2string(log_event.event.event_data),
                 "case_data": data2string(log_event.event.case_data),
                 "message": log_event.event.message,
+                "reasoning": getattr(log_event.event, 'reasoning', ''),
                 "end_action": log_event.event.end_action,
                 "process_state": log_event.process_state
             })
@@ -259,7 +260,7 @@ class ProcessManagerDB:
             if last_timestamp:
                 last_timestamp = last_timestamp.strip('`')
             
-            print(last_timestamp, current_time)
+            #print(last_timestamp, current_time)
         
             if last_timestamp and datetime.fromisoformat(last_timestamp) <= current_time:
                 actions_with_timestamps = [f"{e.get('action') or e.get('message') or 'unknown'} at {e.get('end_timestamp', '')}" for e in events]

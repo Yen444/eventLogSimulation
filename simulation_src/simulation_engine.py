@@ -38,10 +38,10 @@ llm_openai = ChatOpenAI(
 
 
 class SimulationEngine:
-    def __init__(self, llm, config_path, log_path, protocol_path, db_path, arrivals, use_tools: bool = True, agent_data_creation_reflect: bool = False, action_reflect: bool = True, prompt_base_dir: str = './prompts'):
+    def __init__(self, llm, config_path, log_path, protocol_path, db_path, arrivals, use_tools: bool = True, agent_data_creation_reflect: bool = False, action_reflect: bool = True, prompt_base_dir: str = './prompts', use_fewshots: bool = False):
         self.config_manager = ConfigManager(config_path=config_path)
         # create a PromptManager and store it as instance variable for potential reuse
-        self.prompt_manager = create_prompt_manager(base_dir=prompt_base_dir)
+        self.prompt_manager = create_prompt_manager(base_dir=prompt_base_dir, use_fewshots=use_fewshots)
         # create a single TinyDBStore and share it between AgentManager and ProcessManagerDB
         self.store = TinyDBStore(db_path)
 

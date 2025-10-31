@@ -18,10 +18,11 @@ class PromptManager:
     - get_fewshots() returns list with error dict for missing/wrong names.
     """
 
-    def __init__(self, base_dir: str = './prompts', fewshot_dir: str = 'fewshots', prompt_dir: str = 'prompts'):
+    def __init__(self, base_dir: str = './prompts', fewshot_dir: str = 'fewshots', prompt_dir: str = 'prompts', use_fewshots: bool = False):
         self.base_dir = os.path.abspath(base_dir or os.getcwd())
         self.fewshot_dir = os.path.join(self.base_dir, fewshot_dir)
         self.prompt_dir = os.path.join(self.base_dir, prompt_dir)
+        self.use_fewshots = use_fewshots
 
         # indexes
         self._fewshot_index: Dict[str, str] = {}
@@ -183,7 +184,9 @@ class PromptManager:
 
 
 # helper
-def create_prompt_manager(base_dir: Optional[str] = None) -> PromptManager:
-    return PromptManager(base_dir=base_dir)
+def create_prompt_manager(base_dir: Optional[str] = None, fewshot_dir: str = 'fewshots', 
+                         prompt_dir: str = 'prompts', use_fewshots: bool = False) -> PromptManager:
+    return PromptManager(base_dir=base_dir, fewshot_dir=fewshot_dir, 
+                        prompt_dir=prompt_dir, use_fewshots=use_fewshots)
 
 

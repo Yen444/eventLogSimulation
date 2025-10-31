@@ -3,8 +3,6 @@ from typing import List, Dict, Optional, Any, Type
 from langchain_core.prompts import PromptTemplate, FewShotPromptTemplate
 from langchain_core.messages import HumanMessage
 
-
-from .llm_utils import generate_random_text_with_mem_chatbot
 from .utils import extract_time_parts
 from .config_manager import ConfigManager
 from .prompt_manager import PromptManager
@@ -46,12 +44,16 @@ class Agent(BaseModel):
     prompt_manager: Optional[PromptManager] = Field(default=None, description="PromptManager instance for accessing prompts and fewshots")
     tool_manager: Optional[ToolManager] = Field(default=None, description="Tool manager for accessing tools")
     
+    model_config = {
+        "arbitrary_types_allowed": True,
+    }
+
     def generate_data_onfly(self, organization_context, data_model: BaseModel, llm, reflect=True):
         data_attributes = data_model.model_fields.keys()
         # create string from list of data attributes
         data_attributes = ', '.join(data_attributes)
         # fetch prompt template
-        sys_prompt = self.prompt_manager.get_prompt(file_name="agent_data_generation", prompt_name="data_generation", data="template")
+        sys_prompt = self.prompt_manager.get_prompt(file_name="ext_agent_data_generation", prompt_name="data_generation", data="template")
         # allow passing llm per-call or use the agent's llm
         if llm is None:
             llm = self.llm
@@ -61,11 +63,11 @@ class Agent(BaseModel):
         prompt = PromptTemplate.from_template(sys_prompt)
 
         # tool call 
-        if self.tool_manager and self.tool_manager.is_enabled():
+        if self.tool_manager and self.tool_manager.use_tools:
             tools = self.tool_manager.get_stats_tool(name='get_resource_data_stats')
             llm_with_tools = llm.bind_tools(tools)
             # separate tool call prompt
-            tool_prompt = self.prompt_manager.get_prompt(file_name="agent_data_generation", prompt_name="data_generation_tool_call", data="template")
+            tool_prompt = self.prompt_manager.get_prompt(file_name="ext_agent_data_generation", prompt_name="data_generation_tool", data="template")
             tool_prompt = PromptTemplate.from_template(tool_prompt)
             tool_chain = tool_prompt | llm_with_tools
             tool_output = tool_chain.invoke({"organization_context": organization_context, "data_attributes": data_attributes})
@@ -73,12 +75,15 @@ class Agent(BaseModel):
             tool_messages = []
             if tool_calls:
                 for tool_call in tool_calls:
-                    selected_tool = next(tool for tool in self.tools if tool.name.lower() == tool_call["name"].lower())
-                    try:
-                        tool_msg = selected_tool.invoke(tool_call)
-                        tool_messages.append(tool_msg)
-                    except Exception as e:
-                        print(f'Error occurred while invoking tool {tool_call["name"]}: {e}')
+                    selected_tool = next((tool for tool in tools if tool.name.lower() == tool_call["name"].lower()), None)
+                    if selected_tool is not None:
+                        try:
+                            tool_msg = selected_tool.invoke(tool_call)
+                            tool_messages.append(tool_msg)
+                        except Exception as e:
+                            print(f'Error occurred while invoking tool {tool_call["name"]}: {e}')
+                    else:
+                        print(f'Tool: {tool_call["name"]} not found in available tools.')
                     
         else:
             llm_with_tools = llm
@@ -89,8 +94,12 @@ class Agent(BaseModel):
 
         # give tool messages to final data generation
         base_messages = prompt.invoke({"role": self.role, "data_attributes": data_attributes, "organization_context": organization_context})
-        full_messages = [HumanMessage(content=base_messages.text), tool_output] + tool_messages
-        final_output = structured_llm.invoke(full_messages)
+        if tool_messages:
+            full_messages = [HumanMessage(content=base_messages.text), tool_output] + tool_messages
+            final_output = structured_llm.invoke(full_messages)
+        else:
+            final_output = structured_llm.invoke(base_messages)
+
         data =  ", ".join(f"{k}: {v}" for k, v in final_output.model_dump().items())
 
         if not reflect:
@@ -99,7 +108,7 @@ class Agent(BaseModel):
         
         # reflect if needed
 
-        sys_prompt_reflect = self.prompt_manager.get_prompt(file_name="agent_data_generation", prompt_name="data_generation_reflect", data="template")
+        sys_prompt_reflect = self.prompt_manager.get_prompt(file_name="ext_agent_data_generation", prompt_name="data_generation_reflect", data="template")
         prompt_reflect = PromptTemplate.from_template(sys_prompt_reflect)
         chain_reflect = prompt_reflect | structured_llm
         data_reflect = chain_reflect.invoke({"role": self.role, "data_attributes": data_attributes, "data": data,  "organization_context": organization_context})
@@ -112,10 +121,8 @@ class Agent(BaseModel):
         # create string from list of data attributes
         data_attributes = ', '.join(data_attributes)
         # add random text to the prompt
-        random_text = generate_random_text_with_mem_chatbot()
         # create prompt for data
         sys_prompt = self.prompt_manager.get_prompt(file_name="org_agent_data_generation", prompt_name="data_generation", data="template")
-
         # allow passing llm per-call or use the agent's llm
         if llm is None:
             llm = self.llm
@@ -123,26 +130,30 @@ class Agent(BaseModel):
             raise ValueError("No llm provided: pass an llm to generate_data or set agent.llm")
 
         prompt = PromptTemplate.from_template(sys_prompt)
-
         # tool call
-        if self.tool_manager and self.tool_manager.is_enabled():
+        if self.tool_manager and self.tool_manager.use_tools:
             tools = self.tool_manager.get_stats_tool(name='get_resource_data_stats')
             llm_with_tools = llm.bind_tools(tools)
             # separate tool call prompt
             tool_prompt = self.prompt_manager.get_prompt(file_name="org_agent_data_generation", prompt_name="data_generation_tool", data="template")
             tool_prompt = PromptTemplate.from_template(tool_prompt)
             tool_chain = tool_prompt | llm_with_tools
-            tool_output = tool_chain.invoke({"organization_context": organization_context, "org_agents": org_agents, "data_attributes": data_attributes})
+            tool_output = tool_chain.invoke({"data_attributes": data_attributes})
             tool_calls = getattr(tool_output, 'tool_calls', None)
             tool_messages = []
             if tool_calls:
                 for tool_call in tool_calls:
-                    selected_tool = next(tool for tool in self.tools if tool.name.lower() == tool_call["name"].lower())
-                    try:
-                        tool_msg = selected_tool.invoke(tool_call)
-                        tool_messages.append(tool_msg)
-                    except Exception as e:
-                        print(f'Error occurred while invoking tool {tool_call["name"]}: {e}')
+                    selected_tool = next((tool for tool in tools if tool.name.lower() == tool_call["name"].lower()), None)
+                    if selected_tool is not None:
+                        try:
+                            tool_msg = selected_tool.invoke(tool_call)
+                            tool_messages.append(tool_msg)
+                            print(f'Tool: {tool_call["name"]} is being called by llm with arguments {tool_call.get("args", tool_call.get("arguments", {}))}')
+                            print(f'Tool message: {tool_msg.text}')
+                        except Exception as e:
+                            print(f'Error occurred while invoking tool {tool_call["name"]}: {e}')
+                    else:
+                        print(f'Tool: {tool_call["name"]} not found in available tools.')
                     
         else:
             llm_with_tools = llm
@@ -152,9 +163,13 @@ class Agent(BaseModel):
         structured_llm = llm_with_tools.with_structured_output(data_model)
 
         # give tool messages to final data generation
-        base_messages = prompt.invoke({"role": self.role, "data_attributes": data_attributes, "organization_context": organization_context, "org_agents": org_agents, "random_text": random_text})
-        full_messages = [HumanMessage(content=base_messages.text), tool_output] + tool_messages
-        final_output = structured_llm.invoke(full_messages)
+        base_messages = prompt.invoke({"role": self.role, "data_attributes": data_attributes, "organization_context": organization_context})
+        if tool_messages:
+            full_messages = [HumanMessage(content=base_messages.text), tool_output] + tool_messages
+            final_output = structured_llm.invoke(full_messages)
+        else:
+            final_output = structured_llm.invoke(base_messages)
+
         data =  ", ".join(f"{k}: {v}" for k, v in final_output.model_dump().items())
 
         if not reflect:
@@ -196,7 +211,7 @@ class Agent(BaseModel):
         role = self.role
         actions = ', '.join(self.actions)
         data = self.data if self.data else "No data available"
-        prompt = self.prompt_manager.get_prompt(file_name="agent_action", prompt_name="agent_action_tool_call", data="template")
+        prompt = self.prompt_manager.get_prompt(file_name="agent_action", prompt_name="agent_action_tool", data="template")
         prompt = prompt.replace('{role}', role).replace('{data}', data).replace('{actions}', actions)
         
         return prompt
@@ -226,7 +241,7 @@ class Agent(BaseModel):
         
         # Load fewshots on-demand from PromptManager
         fewshot_examples = []
-        if self.prompt_manager:
+        if self.prompt_manager.use_fewshots:
             fewshots = self.prompt_manager.get_fewshots('agent_action')
             # Check if fewshots were loaded successfully (not an error list)
             if fewshots and not (len(fewshots) == 1 and 'error' in fewshots[0]):
@@ -250,7 +265,7 @@ class Agent(BaseModel):
 
         tool_messages = []
         # Tool call
-        if self.tool_manager and self.tool_manager.is_enabled():
+        if self.tool_manager and self.tool_manager.use_tools:
             tools = self.tool_manager.get_stats_tool(name=['get_event_data_stats', 'get_case_data_stats', 'get_event_data_stats_by_resource'])
             llm_with_tools = llm.bind_tools(tools)
             # separate tool call prompt
@@ -272,17 +287,17 @@ class Agent(BaseModel):
             tool_calls = getattr(tool_output, 'tool_calls', None)
             if tool_calls:
                 for tool_call in tool_calls:
-                    selected_tool = next(tool for tool in self.tools if tool.name.lower() == tool_call["name"].lower())
+                    selected_tool = next((tool for tool in tools if tool.name.lower() == tool_call["name"].lower()), None)
                     if selected_tool is not None:
                         print(f'Tool: {tool_call["name"]} is being called by llm with arguments {tool_call.get("args", tool_call.get("arguments", {}))}')
+                        try:
+                            tool_msg = selected_tool.invoke(tool_call)
+                            print(f'Tool message: {tool_msg.content}')
+                            tool_messages.append(tool_msg)
+                        except Exception as e:
+                            print(f'Error occurred while invoking tool {tool_call["name"]}: {e}')
                     else:
                         print(f'Tool: {tool_call["name"]} not found in available tools.')
-                    try:
-                        tool_msg = selected_tool.invoke(tool_call)
-                        print(f'Tool message: {tool_msg.content}')
-                        tool_messages.append(tool_msg)
-                    except Exception as e:
-                        print(f'Error occurred while invoking tool {tool_call["name"]}: {e}')
                     
         else:
             llm_with_tools = llm

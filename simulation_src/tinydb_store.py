@@ -1,14 +1,5 @@
 import os
 from typing import Dict, Any, List, Optional
-#from .agent import Agent
-#from .coordinator_agent import Coordinator
-try:
-    from .agent import Agent
-    from .coordinator_agent import Coordinator
-except ImportError:
-    # Fallback for when imported outside of package context
-    from simulation_src.agent import Agent
-    from simulation_src.coordinator_agent import Coordinator
 from pydantic import BaseModel
 
 from tinydb import TinyDB, where
@@ -50,12 +41,13 @@ class TinyDBStore:
         # meta table for storing simulation metadata (latest timestamp, etc.)
         self.meta = self.db.table('meta')
 
-    def register_org_agent(self, agent: Agent):
+    def register_org_agent(self, agent):
         agent = agent.model_dump()
         # remove non-serializable runtime objects
         if isinstance(agent, dict):
             agent.pop('llm', None)
-            agent.pop('tools', None)
+            agent.pop('tool_manager', None)
+            agent.pop('prompt_manager', None)
         agent = self._sanitize(agent)
         existing = self.org_agents.get(where('id') == agent.get('id'))
         if existing:
@@ -64,12 +56,13 @@ class TinyDBStore:
             self.org_agents.insert(agent)
         self.flush()
     
-    def register_ext_agent(self, agent: Agent):
+    def register_ext_agent(self, agent):
         agent = agent.model_dump()
         # remove non-serializable runtime objects
         if isinstance(agent, dict):
             agent.pop('llm', None)
-            agent.pop('tools', None)
+            agent.pop('tool_manager', None)
+            agent.pop('prompt_manager', None)
         agent = self._sanitize(agent)
         existing = self.ext_agents.get(where('id') == agent.get('id'))
         if existing:
@@ -78,16 +71,15 @@ class TinyDBStore:
             self.ext_agents.insert(agent)
         self.flush()
 
-    def register_coordinator(self, coordinator: Coordinator):
+    def register_coordinator(self, coordinator):
         # Use plain model_dump to get a dict and avoid Pydantic json-mode serialization
         # which can attempt to serialize class objects (ModelMetaclass) and fail.
         coordinator = coordinator.model_dump()
-        # Remove or null-out fields that commonly contain non-serializable objects
-        # such as llm instances or tool callables. _sanitize will also stringify
-        # unknown objects, but removing these explicitly avoids Pydantic JSON errors.
+        # remove tool_manager and prompt_manager references
         if isinstance(coordinator, dict):
+            coordinator.pop('tool_manager', None)
+            coordinator.pop('prompt_manager', None)
             coordinator.pop('llm', None)
-            coordinator.pop('tools', None)
         coordinator = self._sanitize(coordinator)
         self.coordinators.insert(coordinator)
         self.flush()
@@ -202,16 +194,17 @@ class TinyDBStore:
         except Exception:
             return None
     
-    def get_agent_by_id(self, agent_id: str) -> Agent:
+    def get_agent_by_id(self, agent_id: str):
         """Return agent record by agent_id."""
         try:
             agent = self.org_agents.get(where('id') == agent_id)
             if not agent:
                 agent = self.ext_agents.get(where('id') == agent_id)
+            from simulation_src.agent import Agent
             return Agent(**agent) if agent else None
         except Exception:
             return None
-    def get_agent_by_role(self, role: str) -> Optional[Agent]:
+    def get_agent_by_role(self, role: str):
         """Return a single random Agent with the given role from org_agents + ext_agents."""
         try:
             # Fetch all agents with the given role from both tables
@@ -222,6 +215,7 @@ class TinyDBStore:
                 return None
             
             # Pick one at random and convert to Agent
+            from simulation_src.agent import Agent 
             return Agent(**random.choice(docs))
         
         except Exception:
