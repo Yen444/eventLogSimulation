@@ -3,9 +3,18 @@ import os
 import random
 from datetime import datetime, timedelta
 
+from langchain_openai import ChatOpenAI
+
 load_dotenv()
 
 api_key = os.getenv('GOOGLE_API_KEY')
+api_key_openai = os.getenv('OPENAI_API_KEY')
+
+llm_openai = ChatOpenAI(
+    model= 'gpt-5-nano', #"gpt-4o-mini"
+    temperature=1.0,
+    openai_api_key=api_key_openai
+)
 
 
 def main():
@@ -17,7 +26,7 @@ def main():
     # Version 01: male resource takes more time than female, invoice should be cleared at least one week after the corresponding goods receipt has been recorded.
 
     start_time = '2018-01-01T00:00:00+00:00'
-    num_traces = 600
+    num_traces = 400
 
     # P2P cleaned process
 
@@ -41,7 +50,7 @@ def main():
     # ensure output directories exist
     os.makedirs('logs', exist_ok=True)
     os.makedirs('protocols', exist_ok=True)
-    os.makedirs('db_zeroshot_tool_reflect_01_300traces_01', exist_ok=True)
+    os.makedirs('db', exist_ok=True)
 
     # simulate arrivals
     arrivals, inter_arrival_time = simulate_arrivals(start_time=start_time,
@@ -58,10 +67,10 @@ def main():
             f.write(f'{arrival[0]},{arrival[1]}\n')
 
     # paths for Version 0: Female resource takes more time
-    simulation_config_path = './configs/config_p2p_3WayMatchingEC.json'
-    log_path = './logs/p2p_3WayMatchingEC_zeroshot_tool_reflect_01_300traces_01.csv'
-    protocol_path = './protocols/p2p_3WayMatchingEC_zeroshot_tool_reflect_01_300traces_01.csv'
-    db_path = './db_zeroshot_tool_reflect_01_300traces_01'
+    simulation_config_path = './configs/config_p2p_3WayMatchingEC_00.json'
+    log_path = './logs/test.csv'
+    protocol_path = './protocols/test.csv'
+    db_path = './db'
 
     # instantiate the LLM lazily to avoid import-time failures
     try:
@@ -72,7 +81,16 @@ def main():
         raise
     
     # create and run the simulation engine
-    simulation_engine = SimulationEngine(llm=llm_mid, config_path=simulation_config_path, log_path=log_path, protocol_path=protocol_path, db_path=db_path, arrivals=arrivals, use_fewshots=False, use_tools=True, action_reflect=True, agent_data_creation_reflect=False)
+    simulation_engine = SimulationEngine(llm=llm_mid, 
+                                         config_path=simulation_config_path, 
+                                         log_path=log_path, 
+                                         protocol_path=protocol_path, 
+                                         db_path=db_path, 
+                                         arrivals=arrivals, 
+                                         use_fewshots=False, 
+                                         use_tools=True, 
+                                         action_reflect=False, 
+                                         agent_data_creation_reflect=False)
     simulation_engine.run(start_time=start_time, num_traces=num_traces, inter_arrival_time=inter_arrival_time)
 
 if __name__ == "__main__":
