@@ -495,7 +495,7 @@ class TinyDBStore:
         except Exception:
             return {}
 
-    def get_event_data_stats_by_resource(self, event_attribute: str, resource_attribute: str, action: str=None) -> Dict[str, Any]:
+    def get_event_data_stats_by_resource_group(self, event_attribute: str, resource_attribute: str, action: str=None) -> Dict[str, Any]:
         """Get statistics about event data per given action (or all actions) grouped by a resource attribute.
 
         Example: compute average event duration grouped by resource's experience level.
@@ -641,3 +641,21 @@ class TinyDBStore:
                     stats[group_name][attr] = compute_stats(values)
 
         return stats
+
+
+def main():
+    # Initialize the database
+    store = TinyDBStore(store_path=r'c:\Users\ytran\Documents\repos\eventLogSimulation\db_1')
+    
+    # Call the function with the parameters from the user's example
+    result = store.get_event_data_stats_by_resource_group(
+        event_attribute='task_duration',
+        resource_attribute='gender', 
+        action='SRM: Waiting for Approval'
+    )
+    
+    print(f"Result: {result}")
+
+if __name__ == "__main__":
+    main()
+

@@ -31,13 +31,26 @@ agent_action:
     You must output all values for the event data attributes.
     For case data attributes, only output the values that your action requires, if any. 
 
-    *Pay attention to the kind of data attributes (nominal categorical, ordinal categorical, continuous numerical, etc.).*
-    - For continuous numerical data attributes, make sure that they are diverse, random, and continuous but still meaningful across cases and events.
-    - For categorical data attributes, make sure that they are diverse and random but still meaningful across cases and events.
-    - For ordinal categorical data attributes, make sure that they respect the scale, diverse, and meaningful.
+    Guidelines for Outputting Data and Event Attribute Values:
+    - General: Pay attention to the type of each data attribute (nominal categorical, ordinal categorical, continuous numerical, etc.)
+    - For Continuous Numerical Attributes
+        + Values should be diverse, random, and continuous, yet meaningful across cases and events.
+        + Use values suggested in generation tool messages if available and relevant. If not, please generate a continuous random value to meet with the requirements.
+    - For Categorical Attributes:
+        + Ensure diversity and randomness while keeping values meaningful across cases and events.
+        + Limit the number of categories to a reasonable range.
+        + Avoid always picking the most frequent category; consider the overall distribution.
+        + If the statistics show that so far there is only one category value (or very few categories compared to the requirements) you must create a new category value to ensure diversity and randomness.
+        + If the statistics show that there are multiple categories already, you can pick any one from those, but make sure you do not always pick the most frequent one because it will lead to very skewed distribution.
+    - For Ordinal Categorical Attributes:
+        + Ensure values respect the defined scale, are diverse, and meaningful.
+        + Avoid always selecting the highest or lowest categories; consider the distribution as well as the logics, e.g. if you think the task is simple, then the task difficulty can be high.
+    
+    Guidelines for using messages from analytical and generation tools:
+    - When using analytical tool messages, use the provided statistics, attribute requirements, and any relevant conventions to guide your data value selection. If the statistics suggest that the values lack sufficient diversity or randomness, adjust your choices to better reflect the expected patterns.
+    - When using generation tool messages, refer the any requirements or conventions mentioned to guide your data value selection. If the generated values do not meet the diversity, randomness, or meaningfulness criteria, modify them accordingly.
 
     **Please use the following structured format for each action taken:**
-
     - process_id: ```<process_id>```  
     - action: ```<your_chosen_action>```  
     - start_timestamp: ```<start_timestamp_of_action>```
@@ -75,9 +88,10 @@ agent_action:
 
     **You should provide a reasoning field explaining**:
     - For each case data and event data, tell us clearly
-      + what statistics from tool messages that you're provided'? What does this tell you about?
-      + how you should output the values to ensure they are diverse, random, and meaningful. Repeating the values are fine but you need to ensure the diversity, i.e. an attribute can't always have the same value across different cases/events.
-      + how should you output the values to stay alligned with the conventions provided
+      + what statistics from tool messages that you're provided? What does this tell you about current patterns?
+      + if you used `get_event_data_stats_by_resource_group`, how did the group statistics influence your value choices? Which groups did you compare and why?
+      + how you should output the values to ensure they are diverse, random, and meaningful. 
+      + how should you output the values to stay aligned with the conventions provided
 
 
     **Read the process summary carefully, read the message from the coordinator, see what actions you can take, and think logically about what you can do next.**
@@ -87,10 +101,6 @@ agent_action:
     **Be aware: If you've been assigned an activity which you think is not suitable for that process (basing on the process summary and the process state), you can decide to take other action rather than the assigned one (if that action is suitable), or you can choose not to take any action at all.**
     **Process ID: Don't create process_id by yourself, always use the one given to you in the process state.**
     **Process ID: If the process state is empty, leave the process_id empty.**
-    **Data: Data values must be diverse, random, and meaningful. Use the statistics given to you as tool messages to output more diverse, random, and meaningful values.** 
-      - Don't simply repeat the same values for different cases and events.
-      - Consider the diversity of the data, if you keep repeat the most frequent ones, the data will be not diverse enough.
-  
   input_variables:
     - process_summary
     - role
@@ -110,12 +120,69 @@ agent_action_tool:
     You are an intelligent agent participating in a business process simulation.
 
     Your objective is to decide which actions to take and output the necessary information for those actions such as case data, event data, timestamps.
-        - You want to output diverse, random, and meaningful data values for the event data and case data attributes required for your actions.
-        - You also want to output the data that stay alligned with the conventions provided.
-    
-    To fulfill your task effectively, sometimes you may need to call analytical tools to gather necessary statistics or insights, e.g. to output one meaningful value for an attribute, you may need to get statistics for that attribute across all cases/events first.
-    
+    - You want to output diverse, random, and meaningful data values for the event data and case data attributes required for your actions.
+    - You also want to output the data that stay aligned with the conventions and guidelines provided.
 
+    To fulfill your task effectively, you will have access to various tools such as analytical tools or generation tools.
+
+    **AVAILABLE TOOLS AND WHEN TO USE THEM:**
+
+    **1. Analytical Tools (for gathering statistics and insights):**
+
+    **`get_event_data_stats`** - Retrieve statistics about event data per action or across all actions
+    - **When to use:** Need to understand current patterns for event attributes (task_duration, satisfaction, task_difficulty, etc.)
+    - **Examples:**
+      * "What's the current average task_duration for 'Record Invoice Receipt' action?"
+      * "What are the satisfaction levels across all actions so far?"
+      * "How diverse are the task_difficulty values currently?"
+    - **Parameters:** action (optional: specific action name), event_attributes (list of specific attributes)
+
+    **`get_case_data_stats`** - Retrieve statistics about case data across all processes
+    - **When to use:** Need to understand patterns in case-level attributes (spend_area, net_worth, vendor, etc.)
+    - **Examples:**
+      * "What spend_area categories have been used so far?"
+      * "What's the distribution of net_worth values?"
+      * "How many different vendors have appeared in cases?"
+    - **Parameters:** case_attributes (list of specific case attributes)
+
+    **`get_event_data_stats_by_resource_group`** - Retrieve event statistics grouped by resource characteristics
+    - **When to use:** CRITICAL for conventions mentioning group differences or comparisons between resource types
+    - **Examples:**
+      * Convention: "Male employees take more time" → Check task_duration by gender
+      * Convention: "Senior staff have higher satisfaction" → Check satisfaction by experience_level
+      * Convention: "Department A works faster than B" → Check task_duration by department
+    - **Parameters:** event_attribute (e.g., "task_duration"), resource_attribute (e.g., "gender"), action (optional)
+
+    **`get_resource_data_stats`** - Retrieve statistics about resource characteristics (age, gender, experience, etc.)
+    - **When to use:** Need to understand the diversity and distribution of resource profiles
+    - **Examples:**
+      * "What's the gender distribution of agents?"
+      * "What age groups are represented?"
+      * "How are experience levels distributed?"
+    - **Parameters:** resource_attributes (optional: list of specific resource attributes)
+
+    **2. Generation Tools (for creating realistic numerical values):**
+
+    **`generate_numerical_data_uniform`** - Generate values with uniform distribution
+    - **When to use:** Want equally likely values across a range (e.g., claim amounts)
+    - **Examples:**
+      * Insurance claim amounts where all values 100-5000€ are equally likely
+      * Task difficulty when no bias toward any difficulty level
+    - **Parameters:** attribute (name), lower_bound, upper_bound
+
+    **`generate_numerical_data_normal`** - Generate values with normal (bell curve) distribution
+    - **When to use:** Most real-world continuous data (e.g. heights, amount, durations)
+    - **Examples:**
+      * Task durations (most tasks take average time, few very short/long)
+      * Net worth values (most around average, fewer extreme values)
+    - **Parameters:** attribute (name), mean, std (standard deviation)
+
+    **TOOL USAGE STRATEGY:**
+    1. **Identify relevant data attributes** - Determine which data attributes require output values. Use analytical tools only to explore existing patterns in these attributes before assigning or generating values.
+    2. **Check conventions** - If established conventions indicate group differences, apply the function `get_event_data_stats_by_resource_group`
+    3. **Choose appropriate generation method** - Decide whether you need to use generation tools. If so, choose the most suitable distribution — for example, uniform or normal — based on the attribute characteristics.
+    4. **Use realistic parameters** - When using generation tools, ensure that the chosen parameters reflect the actual expected range and variability of the attribute.
+    
     Below is your context and task:
 
     Process Summary: {process_summary}  
@@ -131,9 +198,10 @@ agent_action_tool:
     Conventions: {conventions}
 
     Your task:
-    Using the given tools, and decide if you want to call any of them or not. 
-    If you want to call a tool, specify the tool name and the arguments needed.
-    You can call multiple tools if needed. 
+    - Review the available tools above and decide which ones to call (if any) to help you make informed decisions about your event and case data values
+    - Follow the tool usage strategy: check conventions → gather context → generate appropriate values
+    - If you want to call a tool, specify the tool name and the arguments needed
+    - You can call multiple tools if needed - combine analytical tools for understanding patterns with generation tools for creating values 
   input_variables:
     - process_summary
     - role
@@ -191,12 +259,17 @@ agent_action_modify:
     - If it fails either criterion, modify the timestamps to a more appropriate value.
 
     3. **Case data and event data appropriateness:**
-    - Is it meaningful and plausible?
-    - Is it diverse and realistic? You can refer to the provided statistics from the database (if any)?
-    - Pay attention to the kind of data attributes (nominal categorical, ordinal categorical, continuous numerical, etc.).
-    - For continuous numerical data attributes, make sure that they are diverse, random, and continuous but still meaningful across cases and events.
-    - For categorical data attributes, make sure that they are diverse and random but still meaningful across cases and events.
-    - For ordinal categorical data attributes, make sure that they respect the scale, diverse, and meaningful.
+    - General: Pay attention to the type of each data attribute (nominal categorical, ordinal categorical, continuous numerical, etc.).
+    - For Continuous Numerical Attributes
+        + Values should be diverse, random, and continuous, yet meaningful across cases and events.
+        + You may use values suggested in generation tool messages if available and relevant.    
+    - For Categorical Attributes:
+        + Ensure diversity and randomness while keeping values meaningful across cases and events.
+        + Limit the number of categories to a reasonable range.
+        + Avoid always picking the most frequent category; consider the overall distribution.
+    - For Ordinal Categorical Attributes:
+        + Ensure values respect the defined scale, are diverse, and meaningful.
+        + Avoid always selecting the highest or lowest categories; consider the distribution as well as the logics, e.g. if you think the task is simple, then the task difficulty can be high.
     
     **For each case data and event data value provided:**
     - If the data value is appropriate, diverse, random enough, and meaningful, keep it as is.

@@ -26,8 +26,8 @@ llm_mid = ChatGoogleGenerativeAI(model='gemini-2.0-flash', temperature=0.5)
 llm_high = ChatGoogleGenerativeAI(model='gemini-2.0-flash', temperature=1.0)
 
 llm_openai = ChatOpenAI(
-    model="gpt-4o",
-    temperature=0.5,
+    model="gpt-5-nano",
+    temperature=1.0,
     openai_api_key=api_key_openai
 )
 
@@ -266,7 +266,7 @@ class Agent(BaseModel):
         tool_messages = []
         # Tool call
         if self.tool_manager and self.tool_manager.use_tools:
-            tools = self.tool_manager.get_stats_tool(name=['get_event_data_stats', 'get_case_data_stats', 'get_event_data_stats_by_resource'])
+            tools = self.tool_manager.get_stats_tool(name=['get_event_data_stats', 'get_case_data_stats', 'get_event_data_stats_by_resource_group']) + self.tool_manager.get_generate_tool()
             llm_with_tools = llm.bind_tools(tools)
             # separate tool call prompt
             tool_prompt = self._create_tool_call_prompt()
@@ -344,6 +344,7 @@ class Agent(BaseModel):
             conventions=conventions
         )
         if not reflect:
+            print("Reflection not enabled, returning original actions")
             return actions
 
         modify_prompt = self._create_modify_prompt()

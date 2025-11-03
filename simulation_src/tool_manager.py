@@ -3,6 +3,7 @@ from typing import List, Optional, Dict, Any
 from .prompt_manager import PromptManager
 from .tinydb_store import TinyDBStore
 from langchain_core.tools import tool
+import numpy as np
 
 class ToolManager(BaseModel):
     llm: Any = Field(..., description="The language model instance to be used.")
@@ -35,11 +36,12 @@ class ToolManager(BaseModel):
             else:
                 return {}
         @tool
-        def get_event_data_stats_by_resource(event_attribute: Optional[str]=None, resource_attribute: Optional[str]=None, action: Optional[str]=None) -> Dict[str, Any]:
-            """Retrieve statistics about an event data grouped by a resource attribute per given action or for all given actions
+        def get_event_data_stats_by_resource_group(event_attribute: Optional[str]=None, resource_attribute: Optional[str]=None, action: Optional[str]=None) -> Dict[str, Any]:
+            """Retrieve statistics about event data grouped by a resource group.
+            The statistics are aggregated by the specified resource_attribute (e.g., gender: male vs. female) for a given `action`, or for all actions if no specific one is provided.
             """
             if self.db_store:
-                return self.db_store.get_event_data_stats_by_resource(event_attribute=event_attribute, resource_attribute=resource_attribute, action=action)
+                return self.db_store.get_event_data_stats_by_resource_group(event_attribute=event_attribute, resource_attribute=resource_attribute, action=action)
             else:
                 return {}
         @tool
@@ -52,7 +54,7 @@ class ToolManager(BaseModel):
         tool_mapping = {
             "get_event_data_stats": get_event_data_stats,
             "get_case_data_stats": get_case_data_stats,
-            "get_event_data_stats_by_resource": get_event_data_stats_by_resource,
+            "get_event_data_stats_by_resource_group": get_event_data_stats_by_resource_group,
             "get_resource_data_stats": get_resource_data_stats
         }
         if not name:
@@ -63,4 +65,42 @@ class ToolManager(BaseModel):
             return [tool_mapping.get(name, None)]
         return None
 
-    
+    def get_generate_tool(self):
+        @tool
+        def generate_numerical_data_uniform(attribute,lower_bound, upper_bound) -> float:
+            """
+            Generate a  numerical value with a uniform distribution.
+
+            Args:
+                attribute (str): The name of the attribute for which to generate data.
+                lower_bound (float): Lower bound of the distribution.
+                upper_bound (float): Upper bound of the distribution.
+
+            Returns:
+                float: A single uniformly distributed random value.
+            """
+            try:
+                value = float(np.random.uniform(lower_bound, upper_bound))
+                return f'One possible value for {attribute}: {value}'
+            except Exception as e:
+                return ''
+
+        @tool
+        def generate_numerical_data_normal(attribute, mean, std) -> float:
+            """
+            Generate a single numerical value with a normal (Gaussian) distribution.
+
+            Args:
+                attribute (str): The name of the attribute for which to generate data.
+                mean (float): Mean of the distribution.
+                std (float): Standard deviation (must be > 0).
+
+            Returns:
+                float: A single normally distributed random value.
+            """
+            try:
+                value = float(np.random.normal(mean, std))
+                return f'One possible value for {attribute}: {value}'
+            except Exception as e:
+                return ''
+        return [generate_numerical_data_uniform, generate_numerical_data_normal]

@@ -31,8 +31,8 @@ llm_mid = ChatGoogleGenerativeAI(model='gemini-2.0-flash', temperature=0.5) # ge
 llm_high = ChatGoogleGenerativeAI(model='gemini-2.0-flash', temperature=1.0) # gemini-2.5-flash-lite 0.0005
 
 llm_openai = ChatOpenAI(
-    model="gpt-4o",
-    temperature=0.5,
+    model="gpt-5-nano",
+    temperature=1.0,
     openai_api_key=api_key_openai
 )
 
@@ -120,6 +120,10 @@ class SimulationEngine:
         has_start_activity = any(
             getattr(out, 'action', '').strip().lower() in start_activities for out in agent_outputs
         )
+        # TODO: double-check logic here
+        if trigger:
+            all_empty = True  # for trigger, process_id is always None
+            has_start_activity = True  # for trigger, we consider it has a start activity
 
         if multi_output and all_empty and has_start_activity:
             new_process_id = self.process_manager_db.generate_process_id()
@@ -208,6 +212,7 @@ class SimulationEngine:
             process_state = self.process_manager_db.get_related_process_state(process_id=process_id)
             if process_state == "" or process_state is None:
                 print(f"Process state for process_id {process_id} is empty even no trigger")
+
         if agent is not None:
             out = agent.act(
                 process_summary=process_summary,
@@ -220,7 +225,7 @@ class SimulationEngine:
                 output_model=self.agent_manager.ListAgentOutput,
                 reflect=reflect,
                 conventions=conventions,
-                llm=self.llm
+                llm= self.llm #llm_openai if trigger else self.llm
             )
             if out is None or not getattr(out, 'agent_outputs'):
                 #print(f"Agent {getattr(agent, 'id', 'unknown')} produced no outputs")
@@ -238,6 +243,7 @@ class SimulationEngine:
             message = coordinator_output.message
             is_valid, reason = self._check_valid_handoff(process_id, trigger)
             if is_valid is False:
+                print(coordinator_output)
                 print(f"Skipping invalid handoff: {reason}")
                 continue  # skip invalid handoffs
 
