@@ -26,7 +26,7 @@ def main():
     # Version 01: male resource takes more time than female, invoice should be cleared at least one week after the corresponding goods receipt has been recorded.
 
     start_time = '2018-01-01T00:00:00+00:00'
-    num_traces = 400
+    num_traces = 464
 
     # P2P cleaned process
 
@@ -50,7 +50,7 @@ def main():
     # ensure output directories exist
     os.makedirs('logs', exist_ok=True)
     os.makedirs('protocols', exist_ok=True)
-    os.makedirs('db', exist_ok=True)
+    os.makedirs('db_2', exist_ok=True)
 
     # simulate arrivals
     arrivals, inter_arrival_time = simulate_arrivals(start_time=start_time,
@@ -68,9 +68,9 @@ def main():
 
     # paths for Version 0: Female resource takes more time
     simulation_config_path = './configs/config_p2p_3WayMatchingEC_00.json'
-    log_path = './logs/test.csv'
-    protocol_path = './protocols/test.csv'
-    db_path = './db'
+    log_path = './logs/test_2.csv'
+    protocol_path = './protocols/test_2.csv'
+    db_path = './db_2'
 
     # instantiate the LLM lazily to avoid import-time failures
     try:

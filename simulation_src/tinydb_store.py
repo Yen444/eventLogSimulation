@@ -201,13 +201,15 @@ class TinyDBStore:
             if not agent:
                 agent = self.ext_agents.get(where('id') == agent_id)
             from simulation_src.agent import Agent
-            return Agent(**agent) if agent else None
+            return Agent(**agent)
         except Exception:
             return None
+    
     def get_agent_by_role(self, role: str):
         """Return a single random Agent with the given role from org_agents + ext_agents."""
+
+        # Fetch all agents with the given role from both tables
         try:
-            # Fetch all agents with the given role from both tables
             docs = self.org_agents.search(where('role') == role) + \
                 self.ext_agents.search(where('role') == role)
             
@@ -217,10 +219,9 @@ class TinyDBStore:
             # Pick one at random and convert to Agent
             from simulation_src.agent import Agent 
             return Agent(**random.choice(docs))
-        
         except Exception:
             return None
-
+        
     def get_events_for_process(self, process_id: str):
         """Return list of events for a process ordered by end_timestamp."""
         try:
@@ -351,6 +352,15 @@ class TinyDBStore:
 
         return None
 
+    def _get_top_frequencies(self, value_freq: Dict[str, int], max_items: int = 20) -> Dict[str, int]:
+        """Helper to get the top N most frequent values from a frequency dictionary."""
+        if len(value_freq) <= max_items:
+            return value_freq
+        
+        # Sort by frequency (descending) and take top N
+        sorted_items = sorted(value_freq.items(), key=lambda x: x[1], reverse=True)
+        return dict(sorted_items[:max_items])
+
     def get_event_data_stats(self, action: str=None, event_attributes: List[str]=None) -> Dict[str, Any]:
         """Get statistics about event data per one action or per all actions.
         
@@ -411,14 +421,14 @@ class TinyDBStore:
                         'std': statistics.pstdev(num_values) if len(num_values) > 1 else 0.0,
                         'total_values': len(num_values),
                         'unique_values': len(value_freq),
-                        'value_frequencies': value_freq
+                        'top_20_value_frequencies': self._get_top_frequencies(value_freq)
                     }
                 else:
                     # Categorical statistics
                     stats[attr] = {
                         'total_values': len(values),
                         'unique_values': len(value_freq),
-                        'value_frequencies': value_freq
+                        'top_20_value_frequencies': self._get_top_frequencies(value_freq)
                     }
 
             return stats
@@ -481,13 +491,13 @@ class TinyDBStore:
                         'std': statistics.pstdev(num_values) if len(num_values) > 1 else 0.0,
                         'total_values': len(num_values),
                         'unique_values': len(value_freq),
-                        'value_frequencies': value_freq
+                        'top_20_value_frequencies': self._get_top_frequencies(value_freq)
                     }
                 else:
                     stats[attr] = {
                         'total_values': len(values),
                         'unique_values': len(value_freq),
-                        'value_frequencies': value_freq
+                        'top_20_value_frequencies': self._get_top_frequencies(value_freq)
                     }
 
             return stats
@@ -507,7 +517,7 @@ class TinyDBStore:
             events = self.events.all()
             if action:
                 events = [e for e in events if e.get('action') == action]
-
+            
             # group event attribute values by resource attribute value
             grouped = {}
 
@@ -564,13 +574,13 @@ class TinyDBStore:
                         'std': statistics.pstdev(num_values) if len(num_values) > 1 else 0.0,
                         'total_values': len(num_values),
                         'unique_values': len(value_freq),
-                        'value_frequencies': value_freq
+                        'top_20_value_frequencies': self._get_top_frequencies(value_freq)
                     }
                 else:
                     stats[res_value] = {
                         'total_values': len(values),
                         'unique_values': len(value_freq),
-                        'value_frequencies': value_freq
+                        'top_20_value_frequencies': self._get_top_frequencies(value_freq)
                     }
 
             return stats
@@ -615,6 +625,13 @@ class TinyDBStore:
             except (ValueError, TypeError):
                 num_values = []
 
+            # Helper to get top 20 frequencies
+            def get_top_frequencies(freq_dict: Dict[str, int], max_items: int = 20) -> Dict[str, int]:
+                if len(freq_dict) <= max_items:
+                    return freq_dict
+                sorted_items = sorted(freq_dict.items(), key=lambda x: x[1], reverse=True)
+                return dict(sorted_items[:max_items])
+
             # If all values can be converted to numeric → compute descriptive stats
             if len(num_values) == len(values) and num_values:
                 return {
@@ -624,13 +641,13 @@ class TinyDBStore:
                     'std': statistics.pstdev(num_values) if len(num_values) > 1 else 0.0,
                     'total_values': len(num_values),
                     'unique_values': len(value_freq),
-                    'value_frequencies': value_freq
+                    'top_20_value_frequencies': self._get_top_frequencies(value_freq)
                 }
             else:
                 return {
                     'total_values': len(values),
                     'unique_values': len(value_freq),
-                    'value_frequencies': value_freq
+                    'top_20_value_frequencies': self._get_top_frequencies(value_freq)
                 }
 
         # Compute stats for each agent group and attribute
@@ -645,16 +662,19 @@ class TinyDBStore:
 
 def main():
     # Initialize the database
-    store = TinyDBStore(store_path=r'c:\Users\ytran\Documents\repos\eventLogSimulation\db_1')
+    #store = TinyDBStore(db_path='./db_1')
     
     # Call the function with the parameters from the user's example
-    result = store.get_event_data_stats_by_resource_group(
-        event_attribute='task_duration',
-        resource_attribute='gender', 
-        action='SRM: Waiting for Approval'
-    )
+    #result = store.get_event_data_stats_by_resource_group(
+    #    event_attribute='task_duration',
+    #    resource_attribute='gender', 
+        #action='SRM: Created'
+    #)
     
-    print(f"Result: {result}")
+    #print(f"Result: {result}")
+    #a = store.get_agent_by_id('11557')
+    #print(f"Agent: {a}")
+    pass
 
 if __name__ == "__main__":
     main()
