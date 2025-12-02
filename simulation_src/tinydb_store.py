@@ -359,7 +359,41 @@ class TinyDBStore:
         
         # Sort by frequency (descending) and take top N
         sorted_items = sorted(value_freq.items(), key=lambda x: x[1], reverse=True)
-        return dict(sorted_items[:max_items])
+        if max_items:
+            return dict(sorted_items[:max_items])
+        return dict(sorted_items)
+    
+    def _compute_attribute_stats(self, values: List[Any]) -> Dict[str, Any]:
+        """Helper to compute statistics for a list of values."""
+        if not values:
+            return {}
+
+        # Frequency distribution
+        value_freq = {v: values.count(v) for v in set(values)}
+
+        # Attempt numeric conversion
+        try:
+            num_values = [float(v) for v in values]
+        except (ValueError, TypeError):
+            num_values = []
+
+        # If all values can be converted to numeric → compute descriptive stats
+        if len(num_values) == len(values) and num_values:
+            return {
+                'avg': statistics.mean(num_values),
+                'min': min(num_values),
+                'max': max(num_values),
+                'std': statistics.pstdev(num_values) if len(num_values) > 1 else 0.0,
+                'total_values': len(num_values),
+                'unique_values': len(value_freq),
+                'top_value_frequencies': self._get_top_frequencies(value_freq)
+            }
+        else:
+            return {
+                'total_values': len(values),
+                'unique_values': len(value_freq),
+                'top_value_frequencies': self._get_top_frequencies(value_freq)
+            }
 
     def get_event_data_stats(self, action: str=None, event_attributes: List[str]=None) -> Dict[str, Any]:
         """Get statistics about event data per one action or per all actions.
@@ -396,40 +430,7 @@ class TinyDBStore:
             for attr in event_attributes:
                 # Extract all values for this attribute
                 values = [d.get(attr) for d in data_entries if attr in d and d.get(attr) is not None]
-                if not values:
-                    continue
-
-                # Try numeric conversion
-                num_values = []
-                for v in values:
-                    try:
-                        num_values.append(float(v))
-                    except (ValueError, TypeError):
-                        pass
-
-                # Create frequency dictionary for all unique values
-                value_freq = {}
-                for v in values:
-                    value_freq[v] = value_freq.get(v, 0) + 1
-
-                if len(num_values) == len(values) and num_values:
-                    # Numeric statistics
-                    stats[attr] = {
-                        'avg': statistics.mean(num_values),
-                        'min': min(num_values),
-                        'max': max(num_values),
-                        'std': statistics.pstdev(num_values) if len(num_values) > 1 else 0.0,
-                        'total_values': len(num_values),
-                        'unique_values': len(value_freq),
-                        'top_20_value_frequencies': self._get_top_frequencies(value_freq)
-                    }
-                else:
-                    # Categorical statistics
-                    stats[attr] = {
-                        'total_values': len(values),
-                        'unique_values': len(value_freq),
-                        'top_20_value_frequencies': self._get_top_frequencies(value_freq)
-                    }
+                stats[attr] = self._compute_attribute_stats(values)
 
             return stats
 
@@ -467,38 +468,7 @@ class TinyDBStore:
 
             for attr in case_attributes:
                 values = [d.get(attr) for d in data_entries if attr in d and d.get(attr) is not None]
-                if not values:
-                    continue
-
-                # Try numeric conversion
-                num_values = []
-                for v in values:
-                    try:
-                        num_values.append(float(v))
-                    except (ValueError, TypeError):
-                        pass
-
-                # Create frequency dictionary for all unique values
-                value_freq = {}
-                for v in values:
-                    value_freq[v] = value_freq.get(v, 0) + 1
-
-                if len(num_values) == len(values) and num_values:
-                    stats[attr] = {
-                        'avg': statistics.mean(num_values),
-                        'min': min(num_values),
-                        'max': max(num_values),
-                        'std': statistics.pstdev(num_values) if len(num_values) > 1 else 0.0,
-                        'total_values': len(num_values),
-                        'unique_values': len(value_freq),
-                        'top_20_value_frequencies': self._get_top_frequencies(value_freq)
-                    }
-                else:
-                    stats[attr] = {
-                        'total_values': len(values),
-                        'unique_values': len(value_freq),
-                        'top_20_value_frequencies': self._get_top_frequencies(value_freq)
-                    }
+                stats[attr] = self._compute_attribute_stats(values)
 
             return stats
 
@@ -551,43 +521,29 @@ class TinyDBStore:
             if not grouped:
                 return {}
 
+            # Compute stats for each group using the helper
             stats = {}
-
             for res_value, values in grouped.items():
-                # Try numeric conversion
-                num_values = []
-                for v in values:
-                    try:
-                        num_values.append(float(v))
-                    except (ValueError, TypeError):
-                        pass
-                # Create frequency dictionary for all unique values
-                value_freq = {}
-                for v in values:
-                    value_freq[v] = value_freq.get(v, 0) + 1
-
-                if len(num_values) == len(values) and num_values:
-                    stats[res_value] = {
-                        'avg': statistics.mean(num_values),
-                        'min': min(num_values),
-                        'max': max(num_values),
-                        'std': statistics.pstdev(num_values) if len(num_values) > 1 else 0.0,
-                        'total_values': len(num_values),
-                        'unique_values': len(value_freq),
-                        'top_20_value_frequencies': self._get_top_frequencies(value_freq)
-                    }
-                else:
-                    stats[res_value] = {
-                        'total_values': len(values),
-                        'unique_values': len(value_freq),
-                        'top_20_value_frequencies': self._get_top_frequencies(value_freq)
-                    }
+                stats[res_value] = self._compute_attribute_stats(values)
 
             return stats
 
         except Exception:
             return {}
-    
+    def get_case_data_stats_by_resource_group(self, case_attribute: str, resource_attribute: str) -> Dict[str, Any]:
+        """
+        Compute statistics for a case data attribute grouped by a resource attribute.
+
+        Note:
+            Case data are given during certain activities. Their relationship to 
+            resources is determined by the resource performing the corresponding action.
+
+        Example:
+            To get statistics of insurance_amount by resource gender: the insurance 
+            amount is recorded when a customer submits a claim, and the resource is 
+            the agent handling that action.
+        """
+        pass
     def get_resource_data_stats(self, resource_attributes: List[str] = None) -> Dict[str, Any]:
         """Compute statistics for resource data across organizational and external agents.
         
@@ -611,51 +567,11 @@ class TinyDBStore:
 
         stats = {'org_agents': {}, 'ext_agents': {}}
 
-        def compute_stats(values: List[Any]) -> Dict[str, Any]:
-            """Compute numerical and categorical statistics for a list of values."""
-            if not values:
-                return {}
-
-            # Frequency distribution
-            value_freq = {v: values.count(v) for v in set(values)}
-
-            # Attempt numeric conversion
-            try:
-                num_values = [float(v) for v in values]
-            except (ValueError, TypeError):
-                num_values = []
-
-            # Helper to get top 20 frequencies
-            def get_top_frequencies(freq_dict: Dict[str, int], max_items: int = 20) -> Dict[str, int]:
-                if len(freq_dict) <= max_items:
-                    return freq_dict
-                sorted_items = sorted(freq_dict.items(), key=lambda x: x[1], reverse=True)
-                return dict(sorted_items[:max_items])
-
-            # If all values can be converted to numeric → compute descriptive stats
-            if len(num_values) == len(values) and num_values:
-                return {
-                    'avg': statistics.mean(num_values),
-                    'min': min(num_values),
-                    'max': max(num_values),
-                    'std': statistics.pstdev(num_values) if len(num_values) > 1 else 0.0,
-                    'total_values': len(num_values),
-                    'unique_values': len(value_freq),
-                    'top_20_value_frequencies': self._get_top_frequencies(value_freq)
-                }
-            else:
-                return {
-                    'total_values': len(values),
-                    'unique_values': len(value_freq),
-                    'top_20_value_frequencies': self._get_top_frequencies(value_freq)
-                }
-
         # Compute stats for each agent group and attribute
         for group_name, data_list in agents_data.items():
             for attr in resource_attributes:
                 values = [d[attr] for d in data_list if attr in d and d[attr] is not None]
-                if values:
-                    stats[group_name][attr] = compute_stats(values)
+                stats[group_name][attr] = self._compute_attribute_stats(values)
 
         return stats
 
