@@ -337,7 +337,7 @@ class Agent(BaseModel):
         modify_prompt = modify_prompt.replace('{role}', role).replace('{data}', data).replace('{actions}', actions)
         return modify_prompt
     
-    def _decide_availability(self, llm: Optional[Any], memory_summary: str, recent_actions: str, current_time: str, memory_retention_days: int = 7):
+    def _decide_availability(self, llm: Optional[Any], memory_summary: str, recent_actions: str, current_time: str, memory_retention_days: int):
         """Decide agent availability based on schedule, memory, recent actions, and current time."""
 
         if llm is None:
@@ -360,7 +360,8 @@ class Agent(BaseModel):
         })
 
         availability_decision = structured_llm.invoke(messages)
-        return availability_decision
+        
+        self.available_from = availability_decision.available_from
     
     def _update_work_memory(self, actions, memory_retention_days, current_time):
         """Update the agent's work memory with recent actions.
@@ -390,11 +391,11 @@ class Agent(BaseModel):
         stats = {
             "num_handled_processes": len(set(entry["process_id"] for entry in self.work_memory)),
             "num_handled_events": len(self.work_memory),
-            "total_time_spent_hours": total_time.total_seconds() / 3600 if total_time else 0.0,
-            "average_time_per_day_hours": 0.0
+            "total_time_spent_hours_on_the_tasks_alone": total_time.total_seconds() / 3600 if total_time else 0.0,
         }
+        return ', '.join(f"{key}: {value}" for key, value in stats.items())
 
-    def act(self, output_model, llm: Optional[Any] = None, process_summary: str = "", process_state: str = "", action_data_mapping: Dict[str, List[str]] = None, current_time: str = "", event_data_attributes: List[str] = None, case_data_attributes: List[str] = None, message: str = "", conventions: str = "", reflect=True):
+    def act(self, output_model, llm: Optional[Any] = None, process_summary: str = "", process_state: str = "", action_data_mapping: Dict[str, List[str]] = None, current_time: str = "", event_data_attributes: List[str] = None, case_data_attributes: List[str] = None, message: str = "", conventions: str = "", reflect=True, enable_availability=True, memory_retention_days: int = 7):
         
         # STEP 1: Agent  takes action    
         actions, tool_messages = self._take_action(
@@ -460,8 +461,20 @@ class Agent(BaseModel):
 
         actions.agent_outputs = modified_agent_outputs
 
-        # STEP 3: Update agent's work memory with the action taken
-        # STEP 4: Agent decides availability
+        # STEP 3: Agent decides availability
+        if enable_availability:
+            self._update_work_memory(actions, memory_retention_days, current_time)
+            memory_summary = self._get_work_memory_summary()
+            recent_actions = "; ".join(
+                f'Process_id: {entry["process_id"]}, action: {entry["action"]}, start_timestamp: {entry["start_timestamp"]}, end_timestamp: {entry["end_timestamp"]}'
+                for entry in self.work_memory
+            )
+            self._decide_availability(
+                memory_summary=memory_summary,
+                recent_actions=recent_actions,
+                current_time=current_time,
+                memory_retention_days=memory_retention_days,
+            )
         
         return actions
 

@@ -38,7 +38,7 @@ llm_openai = ChatOpenAI(
 
 
 class SimulationEngine:
-    def __init__(self, llm, config_path, log_path, protocol_path, db_path, arrivals, use_tools: bool = True, agent_data_creation_reflect: bool = False, action_reflect: bool = True, prompt_base_dir: str = './prompts', use_fewshots: bool = False):
+    def __init__(self, llm, config_path, log_path, protocol_path, db_path, arrivals, use_tools: bool = True, agent_data_creation_reflect: bool = False, action_reflect: bool = True, prompt_base_dir: str = './prompts', use_fewshots: bool = False, memory_retention_days: int = 7, enable_availability: bool = True):
         self.config_manager = ConfigManager(config_path=config_path)
         # create a PromptManager and store it as instance variable for potential reuse
         self.prompt_manager = create_prompt_manager(base_dir=prompt_base_dir, use_fewshots=use_fewshots)
@@ -63,6 +63,8 @@ class SimulationEngine:
         self.iteration_id = 0
 
         self._initialize_protocol_file()
+        self.memory_retention_days = memory_retention_days
+        self.enable_availability = enable_availability
 
     def _initialize_protocol_file(self):
         """Ensure the protocol file exists and has a header."""
@@ -363,7 +365,11 @@ class SimulationEngine:
                     combined_iteration = f'{self.iteration_id}_0_{i}'
                     # provide coordinator with current incomplete process states so it can make informed handoffs
                     process_states = "Process state is empty, you must call an agent to start a new process."
-                    coordinator_outputs = self.agent_manager.coordinator.hand_off(process_states=process_states, org_agents=self.agent_manager.org_agents, external_agents=self.agent_manager.ext_agents, current_timestamp=current_time)
+                    coordinator_outputs = self.agent_manager.coordinator.hand_off(
+                        process_states=process_states, 
+                        org_agents=self.agent_manager.get_available_org_agents(current_time=current_time), 
+                        external_agents=self.agent_manager.ext_agents, 
+                        current_timestamp=current_time)
                     if not coordinator_outputs or not coordinator_outputs.coordinator_outputs:
                         print("Coordinator returned no outputs during arrival step.")
                         self.log_protocol(timestamp=arrival_time, from_agent='coordinator', to_agent='', process_id=None, message='', process_state='', combined_iteration=combined_iteration)
@@ -380,7 +386,11 @@ class SimulationEngine:
                 if process_states == "":
                     print("No incomplete processes to update.")
                     continue
-                coordinator_outputs = self.agent_manager.coordinator.hand_off(process_states=process_states, org_agents=self.agent_manager.org_agents, external_agents=self.agent_manager.ext_agents, current_timestamp=sub_current_time)
+                coordinator_outputs = self.agent_manager.coordinator.hand_off(
+                    process_states=process_states, 
+                    org_agents=self.agent_manager.get_available_org_agents(current_time=sub_current_time), 
+                    external_agents=self.agent_manager.ext_agents, 
+                    current_timestamp=sub_current_time)
                 if not coordinator_outputs or not coordinator_outputs.coordinator_outputs:
                     print("Coordinator returned no outputs during update step.")
                     self.log_protocol(timestamp=sub_current_time, from_agent='coordinator', to_agent='', process_id=None, message='', process_state='', combined_iteration=combined_iteration)

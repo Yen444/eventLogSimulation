@@ -14,6 +14,7 @@ from tinydb import where
 
 from dotenv import load_dotenv
 import os
+from datetime import datetime, timedelta
 
 load_dotenv()
 
@@ -283,3 +284,12 @@ class AgentManager:
                     pass
                 return a
         return None
+    
+    def get_available_org_agents(self, current_time: str):
+        """Get all available agents based on current time."""
+        available_org_agents = []
+        for agent in self.org_agents:
+            if datetime.fromisoformat(current_time) >= datetime.fromisoformat(agent.available_from):
+                available_org_agents.append(agent)
+
+        return available_org_agents
