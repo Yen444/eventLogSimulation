@@ -200,6 +200,8 @@ class TinyDBStore:
             agent = self.org_agents.get(where('id') == agent_id)
             if not agent:
                 agent = self.ext_agents.get(where('id') == agent_id)
+            if not agent:
+                return None
             from simulation_src.agent import Agent
             return Agent(**agent)
         except Exception:
@@ -214,10 +216,9 @@ class TinyDBStore:
                 self.ext_agents.search(where('role') == role)
             
             if not docs:
-                return None
-            
+                return None            
             # Pick one at random and convert to Agent
-            from simulation_src.agent import Agent 
+            from simulation_src.agent import Agent
             return Agent(**random.choice(docs))
         except Exception:
             return None
@@ -394,6 +395,49 @@ class TinyDBStore:
                 'unique_values': len(value_freq),
                 'top_value_frequencies': self._get_top_frequencies(value_freq)
             }
+    
+    def _group_by_resource_attribute(self, events: List[Dict[str, Any]], 
+                                      data_attribute: str, 
+                                      resource_attribute: str,
+                                      data_key: str = 'event_data') -> Dict[str, List[Any]]:
+        """Generic helper to group data attribute values by resource attribute values.
+        
+        Args:
+            events: List of event records
+            data_attribute: The attribute to extract from event/case data
+            resource_attribute: The attribute to extract from resource data
+            data_key: The key in event dict containing the data ('event_data' or 'case_data')
+            
+        Returns:
+            Dictionary mapping resource attribute values to lists of data attribute values
+        """
+        grouped = {}
+        
+        for e in events:
+            # Extract resource attribute value
+            res_id = e.get('agent_id')
+            resource_data_value = None
+            if res_id:
+                agent = self.get_agent_by_id(res_id)
+                if agent and agent.data:
+                    data = self._parse_stringified_dict(agent.data)
+                    if data:
+                        resource_data_value = data.get(resource_attribute)
+            # Extract data attribute value
+            data_value = None
+            raw_data = e.get(data_key)
+            if raw_data:
+                data = self._parse_stringified_dict(raw_data)
+                if data:
+                    data_value = data.get(data_attribute)
+
+            # Skip if either is missing
+            if resource_data_value is None or data_value is None:
+                continue
+
+            grouped.setdefault(resource_data_value, []).append(data_value)
+        
+        return grouped
 
     def get_event_data_stats(self, action: str=None, event_attributes: List[str]=None) -> Dict[str, Any]:
         """Get statistics about event data per one action or per all actions.
@@ -488,45 +532,16 @@ class TinyDBStore:
             if action:
                 events = [e for e in events if e.get('action') == action]
             
-            # group event attribute values by resource attribute value
-            grouped = {}
-
-            for e in events:
-                # --- Extract resource attribute value ---
-                res_id = e.get('agent_id')
-                resource_data_value = None
-                if res_id:
-                    agent = self.get_agent_by_id(res_id)
-                    if agent:
-                        raw_data = agent.data
-                        if raw_data:
-                            data = self._parse_stringified_dict(raw_data)
-                            if data:
-                                resource_data_value = data.get(resource_attribute)
-
-                # --- Extract event attribute value ---
-                event_data_value = None
-                raw_event_data = e.get('event_data')
-                if raw_event_data:
-                    event_data = self._parse_stringified_dict(raw_event_data)
-                    if event_data:
-                        event_data_value = event_data.get(event_attribute)
-
-                # Skip if either is missing
-                if resource_data_value is None or event_data_value is None:
-                    continue
-
-                grouped.setdefault(resource_data_value, []).append(event_data_value)
-
+            print(f"Total events to process: {len(events)}")
+            
+            # Group event attribute values by resource attribute value
+            grouped = self._group_by_resource_attribute(events, event_attribute, resource_attribute, 'event_data')
             if not grouped:
                 return {}
 
-            # Compute stats for each group using the helper
-            stats = {}
-            for res_value, values in grouped.items():
-                stats[res_value] = self._compute_attribute_stats(values)
-
-            return stats
+            # Compute stats for each group
+            return {res_value: self._compute_attribute_stats(values) 
+                    for res_value, values in grouped.items()}
 
         except Exception:
             return {}
@@ -543,7 +558,25 @@ class TinyDBStore:
             amount is recorded when a customer submits a claim, and the resource is 
             the agent handling that action.
         """
-        pass
+        if not case_attribute or not resource_attribute:
+            return {}
+
+        try:
+            events = self.events.all()
+            
+            # Group case attribute values by resource attribute value
+            grouped = self._group_by_resource_attribute(events, case_attribute, resource_attribute, 'case_data')
+            
+            if not grouped:
+                return {}
+
+            # Compute stats for each group
+            return {res_value: self._compute_attribute_stats(values) 
+                    for res_value, values in grouped.items()}
+
+        except Exception:
+            return {}
+
     def get_resource_data_stats(self, resource_attributes: List[str] = None) -> Dict[str, Any]:
         """Compute statistics for resource data across organizational and external agents.
         
@@ -574,23 +607,60 @@ class TinyDBStore:
                 stats[group_name][attr] = self._compute_attribute_stats(values)
 
         return stats
+    
+    def get_trace_stats(self):
+        """Get trace variants and their frequencies."""
+        processes = self.processes.all()
+        events = self.events.all()
+        trace_variants = {}
+        for p in processes:
+            p_events = [e for e in events if e.get('process_id') == p.get('process_id')]
+            # Sort events by end_timestamp
+            p_events_sorted = sorted(p_events, key=lambda e: e.get('end_timestamp') or '')
+            trace = tuple(e.get('action') for e in p_events_sorted if e.get('action'))
+            if trace:
+                trace_variants[trace] = trace_variants.get(trace, 0) + 1
+        trace_variants_percent = {
+            trace: (count, count/ sum(trace_variants.values()) * 100)
+            for trace, count in trace_variants.items()
+        }
+        return trace_variants_percent
+
+    def get_resource_schedule_stats(self):
+        """Get statistics on resource schedules across processes and events.
+        For each resource (agent), compute:
+        - hours worked per day of the week
+        - Return a dict mapping agent IDs to their schedule stats {'agent_id': {'Monday': 8, 'Tuesday': 6, ...}}
+        """
+        pass
+    def get_resource_allocation_stats(self):
+        """Get statistics on resource allocation across processes and events.
+        For each resource (agent), compute:
+        - number of unique processes handled
+        - total number of events handled
+        - total time spent (sum of event durations)"""
+        pass
 
 
 def main():
     # Initialize the database
+    pass
     #store = TinyDBStore(db_path='./db_1')
     
     # Call the function with the parameters from the user's example
     #result = store.get_event_data_stats_by_resource_group(
     #    event_attribute='task_duration',
     #    resource_attribute='gender', 
-        #action='SRM: Created'
+    #    #action='SRM: Created'
+    #)
+    #result = store.get_case_data_stats_by_resource_group(
+    #    case_attribute='spend_area',
+    #    resource_attribute='gender'
     #)
     
     #print(f"Result: {result}")
     #a = store.get_agent_by_id('11557')
     #print(f"Agent: {a}")
-    pass
 
 if __name__ == "__main__":
     main()

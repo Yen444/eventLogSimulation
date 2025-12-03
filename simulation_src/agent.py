@@ -12,6 +12,7 @@ from dotenv import load_dotenv
 import os
 
 from deepdiff import DeepDiff
+from datetime import datetime, timedelta
 
 load_dotenv()
 
@@ -34,16 +35,23 @@ llm_openai = ChatOpenAI(
 class VerifyAction(BaseModel):
     appropriate: bool = Field(description="Whether the action is appropriate or not")
 
+class AvailabilityDecision(BaseModel):
+    available_from: Optional[str] = Field(default=None, description="ISO timestamp when the agent becomes available, if None, available immediately")
+    reasoning: str = Field(description="Brief explanation for the availability decision")
+
 class Agent(BaseModel):
     """Base class for all agents"""
     id: str = Field(description="Unique identifier for the agent")
     role: str = Field(description="Role of the agent")
+    schedule: Optional[str] = Field(default="Full-time", description="Schedule of the agent")
     data: Optional[str] = Field(default=None, description="Data related to the agent")
     actions: List[str] = Field(default_factory=list, description="List of actions the agent can perform")
     llm: Optional[Any] = Field(default=None, description="LLM instance to use for this agent (optional). If not provided, pass llm into methods.")
     prompt_manager: Optional[PromptManager] = Field(default=None, description="PromptManager instance for accessing prompts and fewshots")
     tool_manager: Optional[ToolManager] = Field(default=None, description="Tool manager for accessing tools")
-    
+    available_from: Optional[str] = Field(default=None, description="Timestamp when the agent becomes available, if None, available immediately")
+    work_memory: List[Dict[str, Any]] = Field(default_factory=list, description="What the agent has done in the recent past")
+
     model_config = {
         "arbitrary_types_allowed": True,
     }
@@ -328,9 +336,67 @@ class Agent(BaseModel):
         modify_prompt = self.prompt_manager.get_prompt(file_name="agent_action", prompt_name="agent_action_modify", data="template")
         modify_prompt = modify_prompt.replace('{role}', role).replace('{data}', data).replace('{actions}', actions)
         return modify_prompt
+    
+    def _decide_availability(self, llm: Optional[Any], memory_summary: str, recent_actions: str, current_time: str, memory_retention_days: int = 7):
+        """Decide agent availability based on schedule, memory, recent actions, and current time."""
+
+        if llm is None:
+            llm = self.llm
+        if llm is None:
+            raise ValueError("No llm provided: pass an llm to _decide_availability or set agent.llm")
+
+        prompt_template = self.prompt_manager.get_prompt(file_name="agent_availability", prompt_name="agent_availability", data="template")
+        prompt = PromptTemplate.from_template(prompt_template)
+        structured_llm = llm.with_structured_output(AvailabilityDecision)
+
+        messages = prompt.invoke({
+            "role": self.role,
+            "data": self.data if self.data else "No data available",
+            "schedule": self.schedule,
+            "memory_summary": memory_summary,
+            "recent_actions": recent_actions,
+            "current_time": current_time,
+            "memory_retention_days": memory_retention_days
+        })
+
+        availability_decision = structured_llm.invoke(messages)
+        return availability_decision
+    
+    def _update_work_memory(self, actions, memory_retention_days, current_time):
+        """Update the agent's work memory with recent actions.
+            Note: this work memory is only in-memory, not persisted, and contain only work in the recent past (retention days)"""
+        # get current work memory
+        work_memory = self.work_memory # List of dicts {process_id, action, start_timestamp, end_timestamp}
+        # add new actions to work memory
+        for action in actions.agent_outputs:
+            work_memory.append({
+                "process_id": action.process_id,
+                "action": action.action,
+                "start_timestamp": action.start_timestamp,
+                "end_timestamp": action.end_timestamp,
+            })
+        # remove old actions beyond retention days
+        retention_cutoff = datetime.fromisoformat(current_time) - timedelta(days=memory_retention_days)
+        self.work_memory = [entry for entry in work_memory if datetime.fromisoformat(entry["start_timestamp"]) >= retention_cutoff]
+
+    def _get_work_memory_summary(self):
+        """Get a summary of the agent's work memory over the retention period.
+         Returns a string summary of recent actions: {num_handled_processes: X, num_handled_events: Y, total_time_spent: Z hours, average_time_per_day: W hours}"""
+        total_time = sum(
+            datetime.fromisoformat(entry["end_timestamp"]) - 
+            datetime.fromisoformat(entry["start_timestamp"]) 
+            for entry in self.work_memory
+        )
+        stats = {
+            "num_handled_processes": len(set(entry["process_id"] for entry in self.work_memory)),
+            "num_handled_events": len(self.work_memory),
+            "total_time_spent_hours": total_time
+            "average_time_per_day_hours": 0.0
+        }
 
     def act(self, output_model, llm: Optional[Any] = None, process_summary: str = "", process_state: str = "", action_data_mapping: Dict[str, List[str]] = None, current_time: str = "", event_data_attributes: List[str] = None, case_data_attributes: List[str] = None, message: str = "", conventions: str = "", reflect=True):
-            
+        
+        # STEP 1: Agent  takes action    
         actions, tool_messages = self._take_action(
             llm=llm,
             process_summary=process_summary,
@@ -343,6 +409,7 @@ class Agent(BaseModel):
             output_model=output_model,
             conventions=conventions
         )
+        # STEP 2: Reflect on action if needed
         if not reflect:
             print("Reflection not enabled, returning original actions")
             return actions
@@ -392,6 +459,9 @@ class Agent(BaseModel):
                 modified_agent_outputs.append(action)
 
         actions.agent_outputs = modified_agent_outputs
+
+        # STEP 3: Update agent's work memory with the action taken
+        # STEP 4: Agent decides availability
         
         return actions
 
