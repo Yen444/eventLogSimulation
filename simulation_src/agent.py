@@ -390,7 +390,7 @@ class Agent(BaseModel):
         stats = {
             "num_handled_processes": len(set(entry["process_id"] for entry in self.work_memory)),
             "num_handled_events": len(self.work_memory),
-            "total_time_spent_hours": total_time
+            "total_time_spent_hours": total_time.total_seconds() / 3600 if total_time else 0.0,
             "average_time_per_day_hours": 0.0
         }
 
