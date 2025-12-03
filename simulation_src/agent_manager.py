@@ -289,7 +289,7 @@ class AgentManager:
         """Get all available agents based on current time."""
         available_org_agents = []
         for agent in self.org_agents:
-            if datetime.fromisoformat(current_time) >= datetime.fromisoformat(agent.available_from):
+            if not agent.available_from or datetime.fromisoformat(current_time) >= datetime.fromisoformat(agent.available_from):
                 available_org_agents.append(agent)
 
         return available_org_agents

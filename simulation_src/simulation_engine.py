@@ -227,7 +227,9 @@ class SimulationEngine:
                 output_model=self.agent_manager.ListAgentOutput,
                 reflect=reflect,
                 conventions=conventions,
-                llm= self.llm #llm_openai if trigger else self.llm
+                llm= self.llm, #llm_openai if trigger else self.llm
+                memory_retention_days=self.memory_retention_days,
+                enable_availability=self.enable_availability
             )
             if out is None or not getattr(out, 'agent_outputs'):
                 #print(f"Agent {getattr(agent, 'id', 'unknown')} produced no outputs")
@@ -367,9 +369,9 @@ class SimulationEngine:
                     process_states = "Process state is empty, you must call an agent to start a new process."
                     coordinator_outputs = self.agent_manager.coordinator.hand_off(
                         process_states=process_states, 
-                        org_agents=self.agent_manager.get_available_org_agents(current_time=current_time), 
+                        org_agents=self.agent_manager.get_available_org_agents(current_time=arrival_time), 
                         external_agents=self.agent_manager.ext_agents, 
-                        current_timestamp=current_time)
+                        current_timestamp=arrival_time)
                     if not coordinator_outputs or not coordinator_outputs.coordinator_outputs:
                         print("Coordinator returned no outputs during arrival step.")
                         self.log_protocol(timestamp=arrival_time, from_agent='coordinator', to_agent='', process_id=None, message='', process_state='', combined_iteration=combined_iteration)
