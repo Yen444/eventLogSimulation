@@ -153,7 +153,9 @@ class AgentManager:
                             actions=existing.get('actions', []),
                             llm=self.llm,
                             prompt_manager=self.prompt_manager,
-                            tool_manager=self.tool_manager
+                            tool_manager=self.tool_manager,
+                            available_from=existing.get('available_from'),
+                            work_memory=existing.get('work_memory', [])
                         )
                         agent.data = existing.get('data', '')
                         self.org_agents.append(agent)
@@ -199,6 +201,20 @@ class AgentManager:
         role_actions = simulation_configs.get('ext_role_actions', {})
         organization_context = simulation_configs.get('organization_summary', '')
         
+        # Check if an external agent with this role already exists in DB
+        if self.store:
+            existing_ext_agent = self.store.get_agent_by_role(role)
+            if existing_ext_agent:
+                # Wire up runtime dependencies
+                existing_ext_agent.llm = self.llm
+                existing_ext_agent.tool_manager = self.tool_manager
+                existing_ext_agent.prompt_manager = self.prompt_manager
+                # Add to in-memory list if not already present
+                if not any(a.id == existing_ext_agent.id for a in self.ext_agents):
+                    self.ext_agents.append(existing_ext_agent)
+                return existing_ext_agent
+        
+        # Create new external agent
         used_ids = [agent.id for agent in self.org_agents] + [agent.id for agent in self.ext_agents]
         agent_id = generate_random_agent_id(used_ids=used_ids)
         actions = role_actions.get(role, [])
@@ -210,7 +226,6 @@ class AgentManager:
             prompt_manager=self.prompt_manager,
             tool_manager=self.tool_manager
         )
-        # TODO: retrieve existing external agents from db and add tools
 
         agent.generate_data_onfly(data_model=self.ResourceData, llm=self.llm, organization_context=organization_context, reflect=self.agent_data_creation_reflect)
         self.ext_agents.append(agent)

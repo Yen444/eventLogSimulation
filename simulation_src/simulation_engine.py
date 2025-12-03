@@ -199,7 +199,7 @@ class SimulationEngine:
         """Run a single step of the simulation.
 
         This method is intended as an internal helper. Use `run` to drive the
-        full simulation externally. Renamed to `_step` to mark it as internal.
+        full simulation externally.
         """
         process_summary = self.config_manager.configs.get('process_summary', '')
         action_data_mapping = self.config_manager.configs.get('action_data', '')
