@@ -50,7 +50,7 @@ def main():
     # ensure output directories exist
     os.makedirs('logs', exist_ok=True)
     os.makedirs('protocols', exist_ok=True)
-    os.makedirs('db_2', exist_ok=True)
+    os.makedirs('db_memory', exist_ok=True)
 
     # simulate arrivals
     arrivals, inter_arrival_time = simulate_arrivals(start_time=start_time,
@@ -68,9 +68,9 @@ def main():
 
     # paths for Version 0: Female resource takes more time
     simulation_config_path = './configs/config_p2p_3WayMatchingEC_00.json'
-    log_path = './logs/test_2.csv'
-    protocol_path = './protocols/test_2.csv'
-    db_path = './db_2'
+    log_path = './logs/test_memory.csv'
+    protocol_path = './protocols/test_memory.csv'
+    db_path = './db_memory'
 
     # instantiate the LLM lazily to avoid import-time failures
     try:
@@ -90,7 +90,10 @@ def main():
                                          use_fewshots=False, 
                                          use_tools=True, 
                                          action_reflect=False, 
-                                         agent_data_creation_reflect=False)
+                                         agent_data_creation_reflect=False,
+                                         memory_retention_days=7,
+                                         enable_availability=True,
+                                         agent_persistence_interval=1)
     simulation_engine.run(start_time=start_time, num_traces=num_traces, inter_arrival_time=inter_arrival_time)
 
 if __name__ == "__main__":

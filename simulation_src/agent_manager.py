@@ -308,3 +308,11 @@ class AgentManager:
                 available_org_agents.append(agent)
 
         return available_org_agents
+    
+    def persist_agent_availability(self):
+        """Persist the availability status of all agents to the store. Only org_agents are considered here"""
+        if not self.store:
+            return
+        
+        for agent in self.org_agents:
+            self.store.update_org_agent_availability(agent)

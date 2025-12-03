@@ -38,7 +38,7 @@ llm_openai = ChatOpenAI(
 
 
 class SimulationEngine:
-    def __init__(self, llm, config_path, log_path, protocol_path, db_path, arrivals, use_tools: bool = True, agent_data_creation_reflect: bool = False, action_reflect: bool = True, prompt_base_dir: str = './prompts', use_fewshots: bool = False, memory_retention_days: int = 7, enable_availability: bool = True):
+    def __init__(self, llm, config_path, log_path, protocol_path, db_path, arrivals, use_tools: bool = True, agent_data_creation_reflect: bool = False, action_reflect: bool = True, prompt_base_dir: str = './prompts', use_fewshots: bool = False, memory_retention_days: int = 7, enable_availability: bool = True, agent_persistence_interval: int = 50):
         self.config_manager = ConfigManager(config_path=config_path)
         # create a PromptManager and store it as instance variable for potential reuse
         self.prompt_manager = create_prompt_manager(base_dir=prompt_base_dir, use_fewshots=use_fewshots)
@@ -65,6 +65,7 @@ class SimulationEngine:
         self._initialize_protocol_file()
         self.memory_retention_days = memory_retention_days
         self.enable_availability = enable_availability
+        self.agent_persistence_interval = agent_persistence_interval # number of iterations between agent state persistence (mainly info about availability)
 
     def _initialize_protocol_file(self):
         """Ensure the protocol file exists and has a header."""
@@ -220,7 +221,7 @@ class SimulationEngine:
                 process_summary=process_summary,
                 process_state=process_state,
                 action_data_mapping=action_data_mapping,
-                current_time=current_time,
+                current_time=current_time.isoformat(),
                 event_data_attributes=event_data_attributes,
                 case_data_attributes=case_data_attributes,
                 message=message,
@@ -285,38 +286,36 @@ class SimulationEngine:
                 else:
                     return True, 'ok'
 
-    def run(self, start_time, end_time=None, inter_arrival_time=0, num_traces=None):
+    def run(self, start_time, inter_arrival_time, num_traces, end_time=None):
         """Run the simulation.
         Either `end_time` or `num_traces` must be provided.
         """
-        # create and register coordinator agent
+        # create and register agents
         self.agent_manager.create_register_coordinator_agent()
-        # create and register org agents
         self.agent_manager.create_register_org_agents()
 
         if end_time is None and num_traces is None:
             raise ValueError("You must provide either end_time or num_traces.")
 
-        # determine starting time: prefer persisted latest timestamp if present
-        persisted_latest = None
+        # determine start_time
         try:
             persisted_latest = self.process_manager_db.store.get_latest_timestamp()
+            start_time = datetime.datetime.fromisoformat(persisted_latest)
         except Exception:
-            persisted_latest = None
-
-        if persisted_latest:
-            try:
-                start_time = datetime.datetime.fromisoformat(persisted_latest)
-            except Exception:
-                # fallback to provided start_time string
-                start_time = datetime.datetime.fromisoformat(start_time)
-        else:
+            # fallback to provided start_time
             start_time = datetime.datetime.fromisoformat(start_time)
+
+        # parse end_time if provided
         if end_time is not None:
             end_time = datetime.datetime.fromisoformat(end_time)
+        
 
+        # convert inter-arrival time to timedelta
         inter_arrival_time = datetime.timedelta(hours=inter_arrival_time)
         current_time = start_time
+
+        # create the persistence interval counter, for each iteration, increment the counter, when it reaches the interval, persist agent availability and reset the counter
+        persistence_availability_counter = 0
 
         # Filter arrivals so new arrivals start from the latest timestamp
         try:
@@ -420,3 +419,12 @@ class SimulationEngine:
 
             self.iteration_id += 1
 
+            # increment the persistence counter and check if we need to persist agent availability
+            persistence_availability_counter += 1
+            print(f'Persistence availability counter: {persistence_availability_counter}')
+
+            if persistence_availability_counter >= self.agent_persistence_interval:
+                print('Persisting agent availability status to the store...')
+                if self.agent_manager:
+                    self.agent_manager.persist_agent_availability()
+                persistence_availability_counter = 0

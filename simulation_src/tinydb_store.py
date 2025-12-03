@@ -84,6 +84,17 @@ class TinyDBStore:
         self.coordinators.insert(coordinator)
         self.flush()
         print(f"Registering coordinator with ID: {coordinator.get('id')}")
+    
+    def update_org_agent_availability(self, agent):
+        """Update availability info (agent.available_from) for an existing agent
+        """
+        agent_id = agent.id
+        available_from = agent.available_from
+
+        existing = self.org_agents.get(where('id') == agent_id)
+        if existing:
+            self.org_agents.update({'available_from': available_from}, where('id') == agent_id)
+            self.flush()
 
     def insert_event(self, evt: Dict[str, Any]) -> Optional[int]:
         """Insert event into logging table and merge case data into processes table.
@@ -531,8 +542,6 @@ class TinyDBStore:
             events = self.events.all()
             if action:
                 events = [e for e in events if e.get('action') == action]
-            
-            print(f"Total events to process: {len(events)}")
             
             # Group event attribute values by resource attribute value
             grouped = self._group_by_resource_attribute(events, event_attribute, resource_attribute, 'event_data')

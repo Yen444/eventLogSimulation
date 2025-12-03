@@ -156,8 +156,8 @@ class Agent(BaseModel):
                         try:
                             tool_msg = selected_tool.invoke(tool_call)
                             tool_messages.append(tool_msg)
-                            print(f'Tool: {tool_call["name"]} is being called by llm with arguments {tool_call.get("args", tool_call.get("arguments", {}))}')
-                            print(f'Tool message: {tool_msg.text}')
+                            #print(f'Tool: {tool_call["name"]} is being called by llm with arguments {tool_call.get("args", tool_call.get("arguments", {}))}')
+                            #print(f'Tool message: {tool_msg.text}')
                         except Exception as e:
                             print(f'Error occurred while invoking tool {tool_call["name"]}: {e}')
                     else:
@@ -297,10 +297,10 @@ class Agent(BaseModel):
                 for tool_call in tool_calls:
                     selected_tool = next((tool for tool in tools if tool.name.lower() == tool_call["name"].lower()), None)
                     if selected_tool is not None:
-                        print(f'Tool: {tool_call["name"]} is being called by llm with arguments {tool_call.get("args", tool_call.get("arguments", {}))}')
+                        #print(f'Tool: {tool_call["name"]} is being called by llm with arguments {tool_call.get("args", tool_call.get("arguments", {}))}')
                         try:
                             tool_msg = selected_tool.invoke(tool_call)
-                            print(f'Tool message: {tool_msg.content}')
+                            #print(f'Tool message: {tool_msg.content}')
                             tool_messages.append(tool_msg)
                         except Exception as e:
                             print(f'Error occurred while invoking tool {tool_call["name"]}: {e}')
@@ -384,9 +384,10 @@ class Agent(BaseModel):
         """Get a summary of the agent's work memory over the retention period.
          Returns a string summary of recent actions: {num_handled_processes: X, num_handled_events: Y, total_time_spent: Z hours, average_time_per_day: W hours}"""
         total_time = sum(
-            datetime.fromisoformat(entry["end_timestamp"]) - 
+            (datetime.fromisoformat(entry["end_timestamp"]) - 
             datetime.fromisoformat(entry["start_timestamp"]) 
-            for entry in self.work_memory
+            for entry in self.work_memory),
+            timedelta(0)
         )
         stats = {
             "num_handled_processes": len(set(entry["process_id"] for entry in self.work_memory)),
@@ -473,6 +474,7 @@ class Agent(BaseModel):
                 current_time=current_time,
                 memory_retention_days=memory_retention_days,
             )
+            print(f'Current time is {current_time} and agent {self.id} will be available from {self.available_from}')
         
         return actions
 
