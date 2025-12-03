@@ -360,7 +360,7 @@ class Agent(BaseModel):
         })
 
         availability_decision = structured_llm.invoke(messages)
-        
+
         self.available_from = availability_decision.available_from
     
     def _update_work_memory(self, actions, memory_retention_days, current_time):
@@ -411,55 +411,52 @@ class Agent(BaseModel):
             conventions=conventions
         )
         # STEP 2: Reflect on action if needed
-        if not reflect:
-            print("Reflection not enabled, returning original actions")
-            return actions
+        if reflect:
+            modify_prompt = self._create_modify_prompt()
+            # resolve llm for verification
+            if llm is None:
+                llm = self.llm
+            if llm is None:
+                raise ValueError("No llm provided for verification: pass llm to act or set agent.llm")
 
-        modify_prompt = self._create_modify_prompt()
-        # resolve llm for verification
-        if llm is None:
-            llm = self.llm
-        if llm is None:
-            raise ValueError("No llm provided for verification: pass llm to act or set agent.llm")
+            structured_llm = llm.with_structured_output(output_model)
+            prompt = PromptTemplate.from_template(modify_prompt)
+            chain = prompt | structured_llm
 
-        structured_llm = llm.with_structured_output(output_model)
-        prompt = PromptTemplate.from_template(modify_prompt)
-        chain = prompt | structured_llm
+            tool_messages_str = [tool_msg.content for tool_msg in tool_messages]
 
-        tool_messages_str = [tool_msg.content for tool_msg in tool_messages]
+            modified_agent_outputs = []
+            for action in actions.agent_outputs:
+                start_timestamp_str = extract_time_parts(action.start_timestamp)
+                end_timestamp_str = extract_time_parts(action.end_timestamp)
+                action_string = (
+                    f'Process_id: {action.process_id}, '
+                    f'action: {action.action}, '
+                    f'timestamp: You started this action {start_timestamp_str} and finished this action {end_timestamp_str}, '
+                    f'case_data: {", ".join([f"{key}: {value}" for key, value in (action.case_data.model_dump().items() if action.case_data else []) if value is not None])}, '
+                    f'event_data: {", ".join([f"{key}: {value}" for key, value in (action.event_data.model_dump().items() if action.event_data else []) if value is not None])}, '
+                    f'message: {action.message}, '
+                    f'end_action: {action.end_action}'
+                )
+                modified_agent_output = chain.invoke({
+                    "process_summary": process_summary,
+                    "process_state": process_state,
+                    "current_time": current_time,
+                    "previous_action": action_string,
+                    "conventions": conventions,
+                    "event_data_attributes": "; ".join(f"{k} → {v}" for k, v in event_data_attributes.items()),
+                    "case_data_attributes": '; '.join(f"{k} → {v}" for k, v in case_data_attributes.items()),
+                    "tool_messages": "\n".join(tool_messages_str)
+                })
+                
+                # Check if agent_outputs contains any elements before accessing [0]
+                if modified_agent_output.agent_outputs and len(modified_agent_output.agent_outputs) > 0:
+                    modified_agent_outputs.append(modified_agent_output.agent_outputs[0])
+                else:
+                    # If no modified output is generated, keep the original action
+                    modified_agent_outputs.append(action)
 
-        modified_agent_outputs = []
-        for action in actions.agent_outputs:
-            start_timestamp_str = extract_time_parts(action.start_timestamp)
-            end_timestamp_str = extract_time_parts(action.end_timestamp)
-            action_string = (
-                f'Process_id: {action.process_id}, '
-                f'action: {action.action}, '
-                f'timestamp: You started this action {start_timestamp_str} and finished this action {end_timestamp_str}, '
-                f'case_data: {", ".join([f"{key}: {value}" for key, value in (action.case_data.model_dump().items() if action.case_data else []) if value is not None])}, '
-                f'event_data: {", ".join([f"{key}: {value}" for key, value in (action.event_data.model_dump().items() if action.event_data else []) if value is not None])}, '
-                f'message: {action.message}, '
-                f'end_action: {action.end_action}'
-            )
-            modified_agent_output = chain.invoke({
-                "process_summary": process_summary,
-                "process_state": process_state,
-                "current_time": current_time,
-                "previous_action": action_string,
-                "conventions": conventions,
-                "event_data_attributes": "; ".join(f"{k} → {v}" for k, v in event_data_attributes.items()),
-                "case_data_attributes": '; '.join(f"{k} → {v}" for k, v in case_data_attributes.items()),
-                "tool_messages": "\n".join(tool_messages_str)
-            })
-            
-            # Check if agent_outputs contains any elements before accessing [0]
-            if modified_agent_output.agent_outputs and len(modified_agent_output.agent_outputs) > 0:
-                modified_agent_outputs.append(modified_agent_output.agent_outputs[0])
-            else:
-                # If no modified output is generated, keep the original action
-                modified_agent_outputs.append(action)
-
-        actions.agent_outputs = modified_agent_outputs
+            actions.agent_outputs = modified_agent_outputs
 
         # STEP 3: Agent decides availability
         if enable_availability:
@@ -470,6 +467,7 @@ class Agent(BaseModel):
                 for entry in self.work_memory
             )
             self._decide_availability(
+                llm=llm,
                 memory_summary=memory_summary,
                 recent_actions=recent_actions,
                 current_time=current_time,
