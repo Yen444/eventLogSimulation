@@ -474,6 +474,7 @@ class Agent(BaseModel):
                 current_time=current_time,
                 memory_retention_days=memory_retention_days,
             )
+            print(f'Memory summary for agent {self.id}: {memory_summary}')
             print(f'Current time is {current_time} and agent {self.id} will be available from {self.available_from}')
         
         return actions

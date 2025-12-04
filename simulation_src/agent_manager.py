@@ -271,7 +271,17 @@ class AgentManager:
     
     def get_agent_by_id(self, agent_id: str):
         """Get an agent by its ID."""
-        # Prefer the persistent store if available
+        # Prefer in-memory agents first
+        for agent in self.org_agents + self.ext_agents:
+            if getattr(agent, 'id', None) == agent_id:
+                try:
+                    agent.llm = agent.llm or self.llm
+                    agent.tool_manager = self.tool_manager
+                    agent.prompt_manager = self.prompt_manager
+                except Exception:
+                    pass
+                return agent
+        # Fallback: check persistent store (only if not in memory)
         try:
             if self.store:
                 agent = self.store.get_agent_by_id(agent_id)
@@ -300,11 +310,11 @@ class AgentManager:
                 return a
         return None
     
-    def get_available_org_agents(self, current_time: str):
+    def get_available_org_agents(self, current_time: datetime):
         """Get all available agents based on current time."""
         available_org_agents = []
         for agent in self.org_agents:
-            if not agent.available_from or datetime.fromisoformat(current_time) >= datetime.fromisoformat(agent.available_from):
+            if not agent.available_from or current_time >= datetime.fromisoformat(agent.available_from):
                 available_org_agents.append(agent)
 
         return available_org_agents

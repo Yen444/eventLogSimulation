@@ -88,13 +88,17 @@ class TinyDBStore:
     def update_org_agent_availability(self, agent):
         """Update availability info (agent.available_from) for an existing agent
         """
+        print(f"Updating availability for agent ID: {agent.id}")
+        print(f'Agent: {agent}')
         agent_id = agent.id
-        available_from = agent.available_from
+        available_from = self._sanitize(agent.available_from)
+        print(f"Sanitized available_from: {available_from}")
 
         existing = self.org_agents.get(where('id') == agent_id)
         if existing:
             self.org_agents.update({'available_from': available_from}, where('id') == agent_id)
             self.flush()
+            print('Availability updated successfully.')
 
     def insert_event(self, evt: Dict[str, Any]) -> Optional[int]:
         """Insert event into logging table and merge case data into processes table.
