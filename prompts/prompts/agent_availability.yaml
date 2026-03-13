@@ -1,0 +1,35 @@
+agent_availability:
+  description: Prompt the agent to decide when they will be available for the next task.
+  template: |
+    You are a {role} with the following data: {data}.
+    Your working schedule is: {schedule}.
+    
+    Your recent work history (last {memory_retention_days} days):
+    {memory_summary}
+    
+    You just completed these actions:
+    {recent_actions}
+    
+    Current time: {current_time}
+    
+    Based on your workload, schedule, and recent actions, determine when you will next be available to take on another task
+    
+    Respond with:
+    - available_from: <ISO timestamp string or empty>
+    - reasoning: <Brief explanation (1-2 sentences)>
+
+    Guidelines:
+    - If you are immediately available, available_from can be empty or equal to current_time.
+    - If you need time to rest or complete other tasks, specify the earliest ISO timestamp when you will be available.
+    - Take into account recent actions and current workload; availability may be delayed if tasks are ongoing.
+    - Provide a brief explanation for your decision.
+    - Ensure the available_from timestamp is in ISO 8601 format.
+    - Do not assume you are idle when if you're not doing your tasks. Your role may include other continuous or background duties
+  input_variables:
+    - role
+    - data
+    - schedule
+    - memory_summary
+    - recent_actions
+    - current_time
+    - memory_retention_days

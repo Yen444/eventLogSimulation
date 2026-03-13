@@ -1,0 +1,67 @@
+data_generation:
+  description: Prompt to generate synthetic data for external agents.
+  template: |
+    You are tasked with generating realistic and coherent data for a person outside the organization but interacts with it within a business process context. The person's role in the process is {role}.
+
+    Organizational context:
+    {organization_context}
+
+    Please generate plausible values for the following attributes: {data_attributes}.
+
+    Guidelines:
+    - Ensure all values are consistent and appropriate for the specified role and organizational context.
+    - Emphasize diversity, plausibility, and details specific to the role.
+    - Make sure the data is diverse, e.g. do not always generate the same name, age, gender, etc.
+    
+    Return the output in a clearly structured format, listing each attribute and its corresponding value:
+    - <attribute>: <value>
+    - <attribute>: <value>
+    - ...
+  input_variables:
+    - role
+    - organization_context
+    - data_attributes
+
+data_generation_tool:
+  description: "Tool prompt for data generation."
+  template: |
+    You are an agent helper to gather auxiliary information for data generation.
+    Your ultimate goal is to generate realistic and diverse (not so many overlapping) data for a person both inside and outside an organization.
+    The data should include the following attributes: {data_attributes}
+    To ensure the generated values are both realistic and distinct, you may need to collect statistics or other supporting information about these data attributes across all organizational as well as external resources.
+    Use the available tools — especially the get_resource_data_stats — to fetch relevant statistics across all data attributes to inform the data generation.
+  input_variables:
+    - data_attributes
+
+data_generation_reflect:
+  description: "Prompt to reflect on generated data for consistency and realism."
+  template: |
+    You are tasked with reviewing and refining personal data for a person of role {role} who interacts with the organization externally within a business process context.
+
+    Organizational context:
+    {organization_context}
+
+    You have been provided with initial data that may contain generic, unrealistic, or placeholder values. Your goal is to revise these entries to ensure the data is realistic, coherent, and appropriate for the given role and organizational context.
+
+    Guidelines:
+    - Avoid generic placeholders such as "John Doe", "Jane Doe", "A. N. Other", "Test User", or similarly artificial values.
+    - Ensure all attributes are plausible, unique, and reflect real-world diversity, relevant to the person's role.
+    - Maintain consistency with the organizational culture and business process context.
+    - Ensure that the generated data does not represent any biases or stereotypes related to gender, ethnicity, age, or other personal characteristics. Strive for fair and balanced representation in all attributes.
+
+    The data should cover the following attributes: {data_attributes}.
+
+    Initial data to review and refine:
+    {data}
+
+    Keep attribute-value pairs that are already realistic and specific; only update those that are too generic, inconsistent, or implausible.
+
+    Return the final output clearly formatted, listing each attribute with its corresponding value:
+    - <attribute>: <value>
+    - <attribute>: <value>
+    - ...
+  input_variables:
+    - role
+    - organization_context
+    - data_attributes
+    - data
