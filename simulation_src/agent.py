@@ -362,6 +362,16 @@ class Agent(BaseModel):
         availability_decision = structured_llm.invoke(messages)
 
         self.available_from = availability_decision.available_from
+
+    @staticmethod
+    def _safe_parse_iso_datetime(timestamp: Optional[str]) -> Optional[datetime]:
+        """Parse ISO timestamp defensively; return None for invalid values."""
+        if not timestamp:
+            return None
+        try:
+            return datetime.fromisoformat(timestamp)
+        except (TypeError, ValueError):
+            return None
     
     def _update_work_memory(self, actions, memory_retention_days, current_time):
         """Update the agent's work memory with recent actions.
@@ -377,18 +387,30 @@ class Agent(BaseModel):
                 "end_timestamp": action.end_timestamp,
             })
         # remove old actions beyond retention days
-        retention_cutoff = datetime.fromisoformat(current_time) - timedelta(days=memory_retention_days)
-        self.work_memory = [entry for entry in work_memory if datetime.fromisoformat(entry["start_timestamp"]) >= retention_cutoff]
+        current_dt = self._safe_parse_iso_datetime(current_time)
+        if current_dt is None:
+            self.work_memory = work_memory
+            return
+
+        retention_cutoff = current_dt - timedelta(days=memory_retention_days)
+        self.work_memory = [
+            entry
+            for entry in work_memory
+            if (start_dt := self._safe_parse_iso_datetime(entry.get("start_timestamp"))) is not None
+            and start_dt >= retention_cutoff
+        ]
 
     def _get_work_memory_summary(self):
         """Get a summary of the agent's work memory over the retention period.
          Returns a string summary of recent actions: {num_handled_processes: X, num_handled_events: Y, total_time_spent: Z hours, average_time_per_day: W hours}"""
-        total_time = sum(
-            (datetime.fromisoformat(entry["end_timestamp"]) - 
-            datetime.fromisoformat(entry["start_timestamp"]) 
-            for entry in self.work_memory),
-            timedelta(0)
-        )
+        total_time = timedelta(0)
+        for entry in self.work_memory:
+            start_dt = self._safe_parse_iso_datetime(entry.get("start_timestamp"))
+            end_dt = self._safe_parse_iso_datetime(entry.get("end_timestamp"))
+            if start_dt is None or end_dt is None or end_dt < start_dt:
+                continue
+            total_time += (end_dt - start_dt)
+
         stats = {
             "num_handled_processes": len(set(entry["process_id"] for entry in self.work_memory)),
             "num_handled_events": len(self.work_memory),
@@ -477,7 +499,7 @@ class Agent(BaseModel):
             print(f'Memory summary for agent {self.id}: {memory_summary}')
             print(f'Current time is {current_time} and agent {self.id} will be available from {self.available_from}')
         
-        return actions
+        return actions, tool_messages
 
 
     

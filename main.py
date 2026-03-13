@@ -26,7 +26,7 @@ def main():
     # Version 01: male resource takes more time than female, invoice should be cleared at least one week after the corresponding goods receipt has been recorded.
 
     start_time = '2018-01-01T00:00:00+00:00'
-    num_traces = 464
+    num_traces = 400
 
     # P2P cleaned process
 
@@ -48,9 +48,10 @@ def main():
     from simulation_src.utils import simulate_arrivals
 
     # ensure output directories exist
-    os.makedirs('logs', exist_ok=True)
+    os.makedirs('generated_event_logs', exist_ok=True)
     os.makedirs('protocols', exist_ok=True)
-    os.makedirs('db_memory', exist_ok=True)
+    os.makedirs('db', exist_ok=True)
+    os.makedirs('arrivals', exist_ok=True)
 
     # simulate arrivals
     arrivals, inter_arrival_time = simulate_arrivals(start_time=start_time,
@@ -60,7 +61,7 @@ def main():
                                                      base_rate=BASE_RATE_HOUR,
                                                      max_events=2000)
 
-    arrivals_csv_path = os.path.join('logs', 'arrivals_p2p_3WayMatchingEC.csv')
+    arrivals_csv_path = os.path.join('arrivals', 'arrivals_p2p_3WayMatchingEC_00.csv')
     with open(arrivals_csv_path, 'w', encoding='utf-8') as f:
         f.write('timestamp,lamda\n')
         for arrival in arrivals:
@@ -68,9 +69,9 @@ def main():
 
     # paths for Version 0: Female resource takes more time
     simulation_config_path = './configs/config_p2p_3WayMatchingEC_00.json'
-    log_path = './logs/test_memory.csv'
-    protocol_path = './protocols/test_memory.csv'
-    db_path = './db_memory'
+    log_path = './generated_event_logs/p2p_00.csv'
+    protocol_path = './protocols/p2p_00.csv'
+    db_path = './db/p2p_00'
 
     # instantiate the LLM lazily to avoid import-time failures
     try:
@@ -93,7 +94,7 @@ def main():
                                          agent_data_creation_reflect=False,
                                          memory_retention_days=7,
                                          enable_availability=True,
-                                         agent_persistence_interval=1)
+                                         agent_persistence_interval=5)
     simulation_engine.run(start_time=start_time, num_traces=num_traces, inter_arrival_time=inter_arrival_time)
 
 if __name__ == "__main__":

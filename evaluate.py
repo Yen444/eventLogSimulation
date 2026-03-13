@@ -15,16 +15,20 @@ from evaluate_utils import (
     parse_dict_string,
     merge_dicts,
     extract_gender,
-    check_attribute_variability,
-    pretty_print_attribute_variability,
     plot_numeric_distributions,
     plot_numeric_distribution,
     plot_string_distributions,
     plot_string_distribution,
     generate_process_model,
     trace_variants,
-    trace_variants_xes,
     visualize_logs_2d
+)
+
+# Import metric calculation functions
+from metrics import (
+    calculate_all_metrics,
+    compare_logs_with_baseline,
+    prepare_log_for_metrics
 )
 
 def check_characteristics(event_log: pd.DataFrame, outfile=None, figsize=(6, 4)):
@@ -260,138 +264,43 @@ def main():
     # Preprocess generated log
     #in_file_glog = './logs/p2p_3WayMatchingEC_zeroshot_tool_reflect_01_300traces_openai.csv' #'./real_event_logs/BPIChallenge2019_3WayMatchingEC_cleaned.csv' #
     #tiny_db_json_path = './db_zeroshot_tool_reflect_01_300traces_openai/simulation_store.json'
+    print('Preprocessing our generated log...')
     in_file_glog = './logs/test_2.csv'
     tiny_db_json_path = './db_2/simulation_store.json'
-    num_g_traces, gen_log = preprocess_glog(in_file=in_file_glog, tiny_db_json_path=tiny_db_json_path, num_traces=464) #464
+    num_g_traces, our_gen_log = preprocess_glog(in_file=in_file_glog, tiny_db_json_path=tiny_db_json_path, num_traces=464) #464
 
     # Preprocess real log
+    print('Preprocessing real log...')
     in_file_rlog = './real_event_logs/BPIChallenge2019_3WayMatchingEC.csv' #_cleaned
     real_log = process_rlog(in_file=in_file_rlog, num_traces=num_g_traces)
 
+    # plg2 log
+    print('Preprocessing plg2 log...')
+    in_file_plg2log = './logs/p2p_plg2.csv'
+    plg2_log = process_rlog(in_file=in_file_plg2log, num_traces=num_g_traces)
+    print(f'PLG2 columns: {plg2_log.columns.tolist()}')
+    # print unique columns of resource
+    print(f'PLG2 unique resources: {plg2_log["Resource"].unique()}')
 
-    """# Calculate metrics basing on the log-distance measures
-    event_log_ids = EventLogIDs(
-        case='case_id',
-        activity='Activity',
-        start_time='start_time',
-        end_time='end_time',
-        resource='Resource'
-    )
-
-    real_log[event_log_ids.end_time] = pd.to_datetime(real_log[event_log_ids.end_time], utc=True)
-    real_log[event_log_ids.start_time] = real_log[event_log_ids.end_time] - timedelta(minutes=30)
-    #real_log[event_log_ids.start_time] = pd.to_datetime(real_log[event_log_ids.end_time], utc=True)
-
+    # Calculate metrics for our generated log
+    print('Metrics for our generated log:')
+    results = calculate_all_metrics(log1=real_log, log2=our_gen_log)
    
-    gen_log[event_log_ids.end_time] = pd.to_datetime(
-        gen_log[event_log_ids.end_time],
-        utc=True,
-        format='mixed'  # to sovlve the mixed format issue
-    )
-    gen_log[event_log_ids.start_time] = pd.to_datetime(
-        gen_log[event_log_ids.start_time],
-        utc=True,
-        format='mixed'  # to sovlve the mixed format issue
-    )
-    #gen_log[event_log_ids.start_time] = gen_log[event_log_ids.end_time] - timedelta(minutes=30)
-
-    from log_distance_measures.config import DEFAULT_CSV_IDS
-    from log_distance_measures.control_flow_log_distance import control_flow_log_distance
-
-    distance = control_flow_log_distance(
-        real_log, DEFAULT_CSV_IDS,
-        gen_log, DEFAULT_CSV_IDS,
-    )
-    print(f'Control flow distance: {distance}')
-
-    from log_distance_measures.n_gram_distribution import n_gram_distribution_distance
-
-    distance = n_gram_distribution_distance(
-        real_log, DEFAULT_CSV_IDS,
-        gen_log, DEFAULT_CSV_IDS,
-        n=3
-    )
-    print(f'3-gram distribution distance: {distance}')
-
-    distance = n_gram_distribution_distance(
-        real_log, DEFAULT_CSV_IDS,
-        gen_log, DEFAULT_CSV_IDS,
-        n=2
-    )
-    print(f'2-gram distribution distance: {distance}')
-
-    from log_distance_measures.absolute_event_distribution import absolute_event_distribution_distance
-    from log_distance_measures.config import AbsoluteTimestampType, DEFAULT_CSV_IDS, discretize_to_hour
-
-    # Call passing the event logs, its column ID mappings, timestamp type, and discretize function
-    distance = absolute_event_distribution_distance(
-        gen_log, DEFAULT_CSV_IDS,  # First event log and its column id mappings
-        real_log, DEFAULT_CSV_IDS,  # Second event log and its column id mappings
-        discretize_type=AbsoluteTimestampType.END,  # Which timestamps to consider (start times and/or end times)
-        discretize_event=discretize_to_hour  # Function to discretize the time of each timestamp (default by hour)
-    )
-    print(f'Absolute event distribution distance: {distance}')
-
-    from log_distance_measures.case_arrival_distribution import case_arrival_distribution_distance
-    from log_distance_measures.config import DEFAULT_CSV_IDS, discretize_to_hour
-
-    distance = case_arrival_distribution_distance(
-        gen_log, DEFAULT_CSV_IDS,  # First event log and its column id mappings
-        real_log, DEFAULT_CSV_IDS,  # Second event log and its column id mappings
-        discretize_event=discretize_to_hour  # Function to discretize each timestamp (default by hour)
-    )
-    print(f'Case arrival distribution distance: {distance}')
-
-    from log_distance_measures.circadian_event_distribution import circadian_event_distribution_distance
-    from log_distance_measures.config import AbsoluteTimestampType, DEFAULT_CSV_IDS
-
-    distance = circadian_event_distribution_distance(
-        gen_log, DEFAULT_CSV_IDS,  # First event log and its column id mappings
-        real_log, DEFAULT_CSV_IDS,  # Second event log and its column id mappings
-        discretize_type=AbsoluteTimestampType.END  # Consider both start/end timestamps of each activity instance
-    )
-    print(f'Circadian event distribution distance: {distance}')
-
-    from log_distance_measures.config import AbsoluteTimestampType, DEFAULT_CSV_IDS, discretize_to_hour
-    from log_distance_measures.relative_event_distribution import relative_event_distribution_distance
-
-    # Call passing the event logs, its column ID mappings, timestamp type, and discretize function
-    distance = relative_event_distribution_distance(
-        gen_log, DEFAULT_CSV_IDS,  # First event log and its column id mappings
-        real_log, DEFAULT_CSV_IDS,  # Second event log and its column id mappings
-        discretize_type=AbsoluteTimestampType.END,  # Which timestamps to consider (start times and/or end times)
-        discretize_event=discretize_to_hour  # Function to discretize the time of each timestamp (default by hour)
-    )
-    print(f'Relative event distribution distance: {distance}')
-
-    from log_distance_measures.config import DEFAULT_CSV_IDS
-    from log_distance_measures.cycle_time_distribution import cycle_time_distribution_distance
-
-    distance = cycle_time_distribution_distance(
-        gen_log, DEFAULT_CSV_IDS,  # First event log and its column id mappings
-        real_log, DEFAULT_CSV_IDS,  # Second event log and its column id mappings
-        bin_size=pd.Timedelta(hours=1)  # Bins of 1 hour
-    )
-    print(f'Cycle time distribution distance: {distance}')
-
-    from log_distance_measures.circadian_workforce_distribution import circadian_workforce_distribution_distance
-    from log_distance_measures.config import DEFAULT_CSV_IDS
-
-    distance = circadian_workforce_distribution_distance(
-        gen_log, DEFAULT_CSV_IDS,  # First event log and its column id mappings
-        real_log, DEFAULT_CSV_IDS,  # Second event log and its column id mappings
-    )
-    print(f'Circadian workforce distribution distance: {distance}')"""
-
+    # Calculate metrics for PLG2 log
+    print('Metrics for PLG2 generated log:')
+    plg2_results = calculate_all_metrics(log1=real_log, log2=plg2_log)
+    
     # Generate statistics files about trace variants
     gen_stats_file = './logs/gen_stats.txt'
     real_stats_file = './logs/real_stats.txt'
     print(f'Generating trace variants statistics for generated log...')
-    generated_trace_variants = trace_variants(log_df=gen_log, case_id_col='case_id', activity_col='Activity', timestamp_col='end_time', out_file=gen_stats_file)
+    generated_trace_variants = trace_variants(log_df=our_gen_log, case_id_col='case_id', activity_col='Activity', timestamp_col='end_time', out_file=gen_stats_file)
     print(f'Generating trace variants statistics for real log...')
     real_trace_variants = trace_variants(log_df=real_log, case_id_col='case_id', activity_col='Activity', timestamp_col='end_time', out_file=real_stats_file)
+    print('Generating trace variants for PLG2 log...')
+    plg2_trace_variants = trace_variants(log_df=plg2_log, case_id_col='case_id', activity_col='Activity', timestamp_col='end_time', out_file='./logs/plg2_stats.txt')
     
-    """check_characteristics(gen_log, outfile='images/gen_log_characteristics.png', figsize=(8, 9))
+    check_characteristics(our_gen_log, outfile='images/gen_log_characteristics.png', figsize=(8, 9))
 
     plot_string_distribution(
         df=real_log,
@@ -402,7 +311,7 @@ def main():
         figsize=(12, 8)
     )
     plot_string_distribution(
-        df=gen_log,
+        df=our_gen_log,
         attr='case_vendor',
         top_n=20,
         title='Distribution of Generated Vendor',
@@ -419,7 +328,7 @@ def main():
         figsize=(12, 8)
     )
     plot_string_distribution(
-        df=gen_log,
+        df=our_gen_log,
         attr='case_spend_area',
         top_n=20,
         title='Distribution of Generated Spend Area',
@@ -436,7 +345,7 @@ def main():
         figsize=(12, 8)
     )
     plot_string_distribution(
-        df=gen_log,
+        df=our_gen_log,
         attr='case_sub_spend_area',
         top_n=20,
         title='Distribution of Generated Sub Spend Area',
@@ -445,7 +354,7 @@ def main():
         figsize=(12, 8)
     )
     plot_numeric_distributions(
-        gen_df=gen_log,
+        gen_df=our_gen_log,
         gen_attr='case_net_worth',
         real_df=real_log,
         real_attr='Cumulative net worth (EUR)',
@@ -455,28 +364,38 @@ def main():
         figsize=(10, 6)
     )
     plot_numeric_distribution(
-        df=gen_log,
+        df=our_gen_log,
         attr='case_net_worth',
         bins=30,
         title='Distribution of Generated Net Worth',
         outfile='images/gen_net_worth_distribution.png',
         color='green',
         figsize=(10, 6)
-    )"""
-    plg2_log_variants = trace_variants_xes(xes_file='../plg2/p2p_plg2.xes', out_file='./logs/gen_plg2_stats.txt')
-    print(len(plg2_log_variants), 'trace variants in PLG2 log')
+    )
     log_variants = {
         'Real log': real_trace_variants,
         'Our generated log': generated_trace_variants,
-        'PLG2 generated log': plg2_log_variants
+        'PLG2 generated log': plg2_trace_variants
     }
     visualize_logs_2d(
         log_variants,
         method='pca',
         perplexity=20,
-        outfile='images/logs_2d_visualization_pca.png',
+        outfile='images/logs_2d_visualization_pca_uncleaned_real_log.png',
         title='2D Visualization of Different Logs (PCA dimensionality reduction)'
     )
+    # Trace variant distribution distance
+    from evaluate_utils import calculate_trace_variant_distribution_distance
+    distance_our_gen = calculate_trace_variant_distribution_distance(
+        log1_variants_dict=generated_trace_variants,
+        log2_variants_dict=real_trace_variants
+    )
+    print(f'Trace variant distribution distance (Our generated vs Real): {distance_our_gen}')
+    distance_plg2 = calculate_trace_variant_distribution_distance(
+        log1_variants_dict=plg2_trace_variants,
+        log2_variants_dict=real_trace_variants
+    )
+    print(f'Trace variant distribution distance (PLG2 vs Real): {distance_plg2}')
 
 if __name__ == "__main__":
     main()

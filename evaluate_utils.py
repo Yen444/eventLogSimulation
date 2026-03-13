@@ -21,6 +21,17 @@ from typing import List, Dict, Any
 import pm4py
 from pm4py.statistics.variants.log import get as variants_get
 
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.preprocessing import StandardScaler
+from sklearn.manifold import TSNE
+from sklearn.decomposition import PCA
+
+import numpy as np
+from itertools import product
+import distance
+import ot
+
 
 def filter_complete_processes(tiny_db_json_path):
     """Return a list of process_id strings for processes marked as completed.
@@ -133,172 +144,6 @@ def extract_gender(agent_data):
         return None
     match = re.search(r'gender:\s*(Male|Female)', agent_data)
     return match.group(1) if match else None
-
-
-def check_attribute_variability(log_df: pd.DataFrame, case_id_col: str, case_attrs: List[str], event_attrs: List[str]) -> Dict[str, Any]:
-    """
-    Check variability of attributes across cases and events for real logs.
-    
-    Assumes:
-      - log_df is an event-level DataFrame
-      - case and event attributes are directly available as columns
-    
-    Parameters:
-        log_df: pandas DataFrame with event log.
-        case_id_col: column identifying each case.
-        case_attrs: list of case-level attribute names.
-        event_attrs: list of event-level attribute names.
-
-    Returns:
-        A dictionary with variability statistics for each attribute.
-    """
-    variability_stats = {}
-
-    # --- Case-level attributes (one value per case) ---
-    # Get unique case-level data by grouping by case_id and taking first occurrence
-    case_level_df = log_df.groupby(case_id_col).first().reset_index()
-
-    for attr in case_attrs:
-        if attr not in log_df.columns:
-            continue
-        
-        series = case_level_df[attr].dropna()
-        if series.empty:
-            continue
-        
-        # Compute top frequencies
-        value_counts = series.value_counts()
-        top_n = value_counts.head(10)
-        top_values = list(zip(top_n.index.tolist(), top_n.values.tolist()))
-
-        stats_entry = {
-            "level": "case",
-            "unique_values": int(value_counts.shape[0]) if hasattr(value_counts, 'shape') else int(value_counts.size),
-            "total_values": len(series),  # Total count of all non-NaN values
-            "top_values": top_values,
-            "freq_dict": value_counts.to_dict(),  # Full frequency dictionary for histogram plotting
-        }
-
-        # If numeric, also include basic numeric stats
-        if pd.api.types.is_numeric_dtype(series):
-            stats_entry.update({
-                "mean": float(series.mean()),
-                "max": float(series.max()),
-                "min": float(series.min()),
-                "std": float(series.std()),
-            })
-
-        variability_stats[attr] = stats_entry
-
-    # --- Event-level attributes (evaluate per event) ---
-    for attr in event_attrs:
-        if attr not in log_df.columns:
-            continue
-
-        series = log_df[attr].dropna()
-        if series.empty:
-            continue
-        
-        # Compute top frequencies for event-level attributes
-        value_counts = series.value_counts()
-        top_n = value_counts.head(10)
-        top_values = list(zip(top_n.index.tolist(), top_n.values.tolist()))
-
-        stats_entry = {
-            "level": "event",
-            "unique_values": int(value_counts.shape[0]) if hasattr(value_counts, 'shape') else int(value_counts.size),
-            "total_values": len(series),  # Total count of all non-NaN values
-            "top_values": top_values,
-            "freq_dict": value_counts.to_dict(),  # Full frequency dictionary for histogram plotting
-        }
-
-        if pd.api.types.is_numeric_dtype(series):
-            stats_entry.update({
-                "mean": float(series.mean()),
-                "max": float(series.max()),
-                "min": float(series.min()),
-                "std": float(series.std()),
-            })
-
-        variability_stats[attr] = stats_entry
-    
-    return variability_stats
-
-
-def pretty_print_attribute_variability(variability: Dict[str, Any], max_values: int = 10):
-    """Nicely print attribute variability produced by check_attribute_variability.
-
-    - Numeric attributes: prints mean, min, max, std, unique count.
-    - Categorical attributes: prints top values with counts and percentages.
-    """
-    if not variability:
-        print("No attribute variability information to display.")
-        return
-
-    # Determine column width for attribute names
-    max_attr_len = max((len(str(k)) for k in variability.keys()), default=10)
-
-    # Group attributes by level so we print all case-level first, then event-level
-    case_attrs = [k for k, v in variability.items() if v.get('level') == 'case']
-    event_attrs = [k for k, v in variability.items() if v.get('level') == 'event']
-    other_attrs = [k for k in variability.keys() if k not in case_attrs and k not in event_attrs]
-
-    ordered = sorted(case_attrs) + sorted(event_attrs) + sorted(other_attrs)
-
-    for attr in ordered:
-        stats = variability[attr]
-        level = stats.get('level', 'unknown')
-        header = f"Attribute: {attr} (level: {level})"
-        print("\n" + header)
-        print('-' * len(header))
-
-        # Numeric-style stats
-        if any(k in stats for k in ('mean', 'min', 'max', 'std')):
-            mean = stats.get('mean')
-            mn = stats.get('min')
-            mx = stats.get('max')
-            std = stats.get('std')
-            
-            if mean is not None:
-                print(f"  mean: {mean:.4f}")
-            if mn is not None:
-                print(f"  min:  {mn}")
-            if mx is not None:
-                print(f"  max:  {mx}")
-            if std is not None and (isinstance(std, (int, float)) and not math.isnan(std)):
-                print(f"  std:  {std:.4f}")
-        unique = stats.get('unique_values')
-        if unique is not None:
-            print(f"  unique values: {unique}")
-        total_vals = stats.get('total_values')
-        if total_vals is not None:
-            print(f"  total values: {total_vals}")
-        # Show top values when available (works for numeric and categorical)
-        if 'top_values' in stats and stats.get('top_values'):
-            pairs = stats.get('top_values')
-            total = sum(cnt for _, cnt in pairs) if pairs else 1
-            print(f"  top {len(pairs)} values:")
-            for val, cnt in pairs:
-                pct = 100.0 * cnt / total_vals if total_vals else 0.0
-                # format value as string, limit length
-                val_str = (str(val))
-                print(f"    {val_str:>{max_attr_len}} : {cnt:>6d} ({pct:5.2f}%)")
-            if stats.get('unique_values', 0) and stats.get('unique_values') > len(pairs):
-                remaining = stats.get('unique_values') - len(pairs)
-                print(f"    ... and {remaining} more distinct values")
-        elif 'unique_values' in stats:
-            # Fallback: list (trimmed)
-            uniques = stats.get('unique_values') or []
-            display = uniques[:max_values]
-            print(f"  distinct values: {len(uniques)} (showing up to {max_values})")
-            for v in display:
-                print(f"    - {v}")
-            if len(uniques) > max_values:
-                print(f"    ... and {len(uniques) - max_values} more values")
-        else:
-            # Fallback: print the dict
-            print(f"  Stats: {stats}")
-
 
 def plot_numeric_distributions(gen_df, gen_attr, real_df, real_attr, bins=20, title=None, outfile=None, figsize=(8, 5)):
     """
@@ -483,30 +328,80 @@ def generate_process_model(log_df, case_id_col, activity_col, timestamp_col, noi
     if out_file:
         pm4py.write_bpmn(process_model, out_file, auto_layout=True)
 
-def trace_variants_xes(xes_file, out_file=None):
+def trace_variants(log_df=None, case_id_col=None, activity_col=None, timestamp_col=None, 
+                   xes_file=None, out_file=None):
     """
-    Get the trace variants from the XES log file.
+    Get the trace variants from either a log DataFrame or XES file.
 
     Parameters:
-        xes_file: path to the XES log file.
+        log_df: pandas DataFrame containing the event log (optional if xes_file is provided).
+        case_id_col: column name for case IDs (required if log_df is provided).
+        activity_col: column name for activity names (required if log_df is provided).
+        timestamp_col: column name for timestamps (required if log_df is provided).
+        xes_file: path to the XES log file (optional if log_df is provided).
         out_file: optional file path to save the variants.
+
     Returns:
-        trace variants
+        dict: trace variants with frequencies
     """
-    log = pm4py.read_xes(xes_file)
     
-    # Lower activity names
-    for trace in log:
-        for event in trace:
-            if 'concept:name' in event:
-                event['concept:name'] = event['concept:name'].lower()
+    # Input validation
+    if log_df is None and xes_file is None:
+        raise ValueError("Either log_df or xes_file must be provided")
     
-    variants = variants_get.get_variants(log)
+    if log_df is not None and xes_file is not None:
+        raise ValueError("Provide either log_df or xes_file, not both")
+    
+    if log_df is not None and (case_id_col is None or activity_col is None or timestamp_col is None):
+        raise ValueError("case_id_col, activity_col, and timestamp_col must be provided when using log_df")
+    
+    # Process XES file
+    if xes_file is not None:
+        log = pm4py.read_xes(xes_file)
+        
+        # Lower activity names
+        for trace in log:
+            for event in trace:
+                if 'concept:name' in event:
+                    event['concept:name'] = event['concept:name'].lower()
+        
+        variants = variants_get.get_variants(log)
+    
+    # Process DataFrame
+    else:
+        # Create a copy to avoid modifying the original
+        log_df_copy = log_df.copy()
+        
+        log_df_copy[timestamp_col] = pd.to_datetime(
+            log_df_copy[timestamp_col],
+            utc=True,
+            format='mixed'  # to solve the mixed format issue
+        )
+        log_df_copy = log_df_copy.dropna(subset=[timestamp_col, case_id_col])
+        # lower activity names
+        log_df_copy[activity_col] = log_df_copy[activity_col].str.lower()
+
+        variants = pm4py.get_variants(
+            log_df_copy,
+            activity_key=activity_col,
+            case_id_key=case_id_col,
+            timestamp_key=timestamp_col
+        )
+
+        log_df_copy = log_df_copy.rename(columns={
+            case_id_col: "case:concept:name",
+            activity_col: "concept:name",
+            timestamp_col: "time:timestamp"
+        })   
+        variants = variants_get.get_variants(log=log_df_copy)
+    
+    # Common processing for both input types
     # print number of variants
     print(len(variants), 'variants found')
     # print average len of variants
     avg_len = sum(len(v) for v in variants.keys()) / len(variants.keys()) if variants else 0
     print(f"Average length of variants: {avg_len:.2f}")
+    
     # write all variants ordered by frequency (descending)
     variant_dict = {}
     # sort variants by their frequency (number of traces) descending
@@ -520,7 +415,6 @@ def trace_variants_xes(xes_file, out_file=None):
                 for trace in traces:
                     f.write(f"  Trace: {trace}\n")
                 f.write(f"  Frequency: {freq}\n\n")
-
                 variant_dict[variant] = freq
     else:
         for idx, (variant, traces) in enumerate(sorted_variants, start=1):
@@ -529,67 +423,7 @@ def trace_variants_xes(xes_file, out_file=None):
     
     return variant_dict
 
-def trace_variants(log_df, case_id_col, activity_col, timestamp_col, out_file=None):
-    """
-    Get the trace variants from the log DataFrame.
 
-    Parameters:
-        log_df: pandas DataFrame containing the event log.
-        case_id_col: column name for case IDs.
-        activity_col: column name for activity names.
-        timestamp_col: column name for timestamps.
-        out_file: optional file path to save the variants.
-
-    Returns:
-        trace variants
-    """
-    log_df[timestamp_col] = pd.to_datetime(
-        log_df[timestamp_col],
-        utc=True,
-        format='mixed'  # to solve the mixed format issue
-    )
-    log_df = log_df.dropna(subset=[timestamp_col, case_id_col])
-    # lower activity names
-    log_df[activity_col] = log_df[activity_col].str.lower()
-
-    variants = pm4py.get_variants(
-        log_df,
-        activity_key=activity_col,
-        case_id_key=case_id_col,
-        timestamp_key=timestamp_col
-    )
-
-    log_df = log_df.rename(columns={
-        case_id_col: "case:concept:name",
-        activity_col: "concept:name",
-        timestamp_col: "time:timestamp"
-    })   
-    variants = variants_get.get_variants(log=log_df)
-    # print number of variants
-    print(len(variants), 'variants found')
-    # print average len of variants
-    avg_len = sum(len(v) for v in variants.keys()) / len(variants.keys()) if variants else 0
-    print(f"Average length of variants: {avg_len:.2f}")
-    # write all variants ordered by frequency (descending)
-    variant_dict = {}
-    if out_file:
-        # sort variants by their frequency (number of traces) descending
-        sorted_variants = sorted(variants.items(), key=lambda item: len(item[1]), reverse=True)
-        with open(out_file, 'w', encoding='utf-8') as f:
-            for idx, (variant, traces) in enumerate(sorted_variants, start=1):
-                freq = len(traces)
-                f.write(f"Variant #{idx}: {variant}\n")
-                for trace in traces:
-                    f.write(f"  Trace: {trace}\n")
-                f.write(f"  Frequency: {freq}\n\n")
-
-                variant_dict[variant] = freq
-    return variant_dict
-import numpy as np
-import matplotlib.pyplot as plt
-from sklearn.preprocessing import StandardScaler
-from sklearn.manifold import TSNE
-from sklearn.decomposition import PCA
 
 def visualize_logs_2d(logs: dict, method: str = "tsne", perplexity: int = 30, random_state: int = 42, title: str = None, outfile: str = None) -> dict:
     """
@@ -606,7 +440,7 @@ def visualize_logs_2d(logs: dict, method: str = "tsne", perplexity: int = 30, ra
         dict: activity mapping, reduced vectors, labels
     """
 
-    # 1. Build set of unique activities
+    # Build set of unique activities
     all_variants = []
     labels = []
     for log_name, log_data in logs.items():
@@ -618,8 +452,12 @@ def visualize_logs_2d(logs: dict, method: str = "tsne", perplexity: int = 30, ra
     
     activities = sorted({a for trace in all_variants for a in trace})
     activity_to_id = {a: i+1 for i, a in enumerate(activities)}  # map activities 1..N
+
+    print('All activities and their mappings:')
+    for activity, idx in activity_to_id.items():
+        print(f"  {activity}: {idx}")
     
-    # 2. Encode traces to fixed-length vectors
+    # Encode traces to fixed-length vectors
     max_len = max(len(trace) for trace in all_variants)
 
     def encode_trace(trace, mapping, max_len):
@@ -630,7 +468,7 @@ def visualize_logs_2d(logs: dict, method: str = "tsne", perplexity: int = 30, ra
     X = np.array([encode_trace(t, activity_to_id, max_len) for t in all_variants])
     labels = np.array(labels)
 
-    # 3. Scale and reduce dimensions
+    # Scale and reduce dimensions
     X_scaled = StandardScaler().fit_transform(X)
     if method.lower() == "pca":
         reducer = PCA(n_components=2, random_state=random_state)
@@ -639,9 +477,10 @@ def visualize_logs_2d(logs: dict, method: str = "tsne", perplexity: int = 30, ra
     
     X_reduced = reducer.fit_transform(X_scaled)
 
-    # 4. Filter out points with y values > 10 and x values < 2 (only for PCA)
+    # Filter out points with y values > 10 and x values < 2 (only for PCA)
     if method.lower() == "pca":
-        filter_mask = (X_reduced[:, 1] <= 10) & (X_reduced[:, 0] <= 0.5)
+        #filter_mask = (X_reduced[:, 1] <= 5) & (X_reduced[:, 0] <= 0.5)
+        filter_mask = np.ones(len(X_reduced), dtype=bool)  # No filtering
         X_reduced_filtered = X_reduced[filter_mask]
         labels_filtered = labels[filter_mask]
     else:
@@ -666,7 +505,6 @@ def visualize_logs_2d(logs: dict, method: str = "tsne", perplexity: int = 30, ra
             linewidth=0.5,
             label=log_name
         )
-        #print(f'Log name: {log_name}, number of traces: {np.sum(mask)}, color: {contrast_colors[i % len(contrast_colors)]}')
     
     plt.title(title if title else "2D Visualization of Process Logs")
     plt.xlabel("Dimension 1")
@@ -685,4 +523,50 @@ def visualize_logs_2d(logs: dict, method: str = "tsne", perplexity: int = 30, ra
         "reduced_vectors": X_reduced_filtered,
         "labels": labels_filtered
     }
+def normalized_damerau_levenshtein(trace1, trace2):
+    """Compute normalized Damerau-Levenshtein distance between two traces."""
+    if not trace1 and not trace2:
+        return 0.0
+    dist = distance.levenshtein(trace1, trace2)
+    max_len = max(len(trace1), len(trace2))
+    return dist / max_len if max_len > 0 else 0.0
+
+def calculate_trace_variant_distribution_distance(log1_variants_dict: dict, log2_variants_dict: dict) -> float:
+    """
+    Calculate the distance between two trace variant distributions using Jensen-Shannon divergence.
+
+    Args:
+        log1_variants (dict): {variant_tuple: frequency} for log 1
+        log2_variants (dict): {variant_tuple: frequency} for log 2
+
+    Returns:
+        float: Earth Mover's Distance between the two distributions
+    """
+    # create distance matrix using Levenshtein distance
+    log1_variants = list(log1_variants_dict.keys())
+    log2_variants = list(log2_variants_dict.keys())
+    distance_matrix = np.zeros((len(log1_variants), len(log2_variants)))
+
+    for i, v1 in enumerate(log1_variants):
+        for j, v2 in enumerate(log2_variants):
+            distance_matrix[i, j] = normalized_damerau_levenshtein(v1, v2)
+    # create probability distributions
+    total1 = sum(log1_variants_dict.values())
+    total2 = sum(log2_variants_dict.values())
+    prob_dist1 = np.array([log1_variants_dict[v] / total1 for v in log1_variants])
+    prob_dist2 = np.array([log2_variants_dict[v] / total2 for v in log2_variants])
+    # compute Earth Mover's Distance
+    T = ot.emd(prob_dist1, prob_dist2, distance_matrix)
+    emd = np.sum(T * distance_matrix)
+    return emd
+    
+def main():
+    #log1_variants = {('a', 'b', 'c'): 1, ('a', 'c', 'd'): 10, ('b', 'c'): 1}
+    #log2_variants = {('a', 'b', 'c'): 1}
+    #distance = calculate_trace_variant_distribution_distance(log1_variants, log2_variants)
+    #print(distance)
+    pass
+
+if __name__ == "__main__":
+    main()
 

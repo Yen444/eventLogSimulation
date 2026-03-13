@@ -105,6 +105,25 @@ class SimulationEngine:
         except Exception:
             pass
 
+    def _format_tool_messages(self, tool_messages):
+        """Format tool messages into a readable string for event log."""
+        if not tool_messages:
+            return ""
+        
+        tool_summaries = []
+        for i, tool_msg in enumerate(tool_messages):
+            # Extract tool name and content
+            tool_name = getattr(tool_msg, 'name', f'tool_{i}')
+            tool_content = getattr(tool_msg, 'content', str(tool_msg))
+            
+            # Truncate long content for readability
+            if len(tool_content) > 150:
+                tool_content = tool_content[:150] + "..."
+            
+            tool_summaries.append(f"{tool_name}: {tool_content}")
+        
+        return " | ".join(tool_summaries)
+
     def _process_arrivals(self, current_time, inter_arrival_time):
         """Helper function to process arrivals within the current time window."""
         next_current_time = current_time + inter_arrival_time
@@ -112,7 +131,7 @@ class SimulationEngine:
         #print(f'Number of arrivals in this updating step: {len(sub_arrivals)}')
         return sub_arrivals
 
-    def _process_agent_outputs(self, agent, agent_outputs, process_state, combined_iteration, trigger, last_activities):
+    def _process_agent_outputs(self, agent, agent_outputs, process_state, combined_iteration, trigger, last_activities, tool_messages=""):
         """Helper function to process agent outputs."""
         multi_output = len(agent_outputs) > 1
         start_activities = self.config_manager.configs.get('start_activities', []) or []
@@ -137,7 +156,8 @@ class SimulationEngine:
                     agent=agent,
                     event=agent_output,
                     process_state=process_state,
-                    iteration_id=safe_combined
+                    iteration_id=safe_combined,
+                    tool_messages=tool_messages
                 )
                 self.process_manager_db.update_process(log_event=log_event, last_activities=last_activities)
             return  # prevent double-logging
@@ -163,7 +183,8 @@ class SimulationEngine:
                 agent=agent,
                 event=agent_output,
                 process_state=process_state,
-                iteration_id=safe_combined
+                iteration_id=safe_combined,
+                tool_messages=tool_messages
             )
             self.process_manager_db.update_process(log_event=log_event, last_activities=last_activities)
 
@@ -217,7 +238,7 @@ class SimulationEngine:
                 print(f"Process state for process_id {process_id} is empty even no trigger")
 
         if agent is not None:
-            out = agent.act(
+            out, tool_messages = agent.act(
                 process_summary=process_summary,
                 process_state=process_state,
                 action_data_mapping=action_data_mapping,
@@ -236,8 +257,11 @@ class SimulationEngine:
                 #print(f"Agent {getattr(agent, 'id', 'unknown')} produced no outputs")
                 return None
 
+            # Format tool messages for logging
+            tool_messages_str = self._format_tool_messages(tool_messages)
+
             #print(f"Agent takes {len(out.agent_outputs)} actions")
-            self._process_agent_outputs(agent, out.agent_outputs, process_state, combined_iteration, trigger, last_activities)
+            self._process_agent_outputs(agent, out.agent_outputs, process_state, combined_iteration, trigger, last_activities, tool_messages_str)
 
     def _handle_coordinator_outputs(self, coordinator_outputs, current_time, combined_iteration, trigger, process_state):
         """Helper function to handle coordinator outputs."""
