@@ -1,0 +1,80 @@
+{
+    "process_summary": "The process begins with the SRM Operations Team performing the following SRM activities in strict order: *SRM: Created*, *SRM: Complete*, *SRM: Waiting for Approval*, and *SRM: Document Complete*. Once these activities are completed, the process proceeds with *SRM: In Transfer to Execution System* and *SRM: Ordered*, which can be executed in parallel. Both must be completed before continuing. All SRM-related steps mostly involve simple system clicks and are typically quick to perform. Next, the Purchasing and Receiving Team *Create Purchase Order Item*. Parallel to this activity, the SRM Operation Team can carry on the activity *SRM: Change was Transmitted*. After these two activities are done, and after the goods arrive, the Purchasing and Receiving Team will *Record Goods Receipt*. Concurrently, the Invoice Recording Team *Record Invoice Receipt*, which may occur either before or after the goods receipt, but both activities must be completed before moving forward. After these steps, any existing payment blocks should be checked and removed if present with Remove Payment Block (this will only be done if there is existing payment block). The process only ends with the Invoice Clearing Team completing *Clear Invoice*.",
+    "organization_summary": "The organization is a company based in the Netherlands, specializing in coatings and paints. It has a distinctly international culture, with a relatively high proportion of foreign employees. The company values age diversity, employing people across various experience levels—from junior to senior. Both part-time and full-time work arrangements are supported",
+    "agent_data": {
+        "name": "Name of the resource agent",
+        "age": "Age of the resource agent",
+        "gender": "Gender of the resource agent"
+    },
+    "case_attributes": {
+        "spend_area": "Nominal categorical data representing a high-level classification of organizational spending. Includes 10 categories with varying frequencies.",
+        "sub_spend_area": "Nominal categorical data providing a more specific classification within each spend area, describing the exact type of goods or services procured. Includes 10 categories with varying frequencies.",
+        "net_worth": "Continuous numerical data indicating the monetary value of an item in Euros, depending on the spend area and sub spend area. Values range from 10 to 5000 Euros, with most below 1000 Euros.",
+        "vendor": "Nominal categorical data representing the external supplier providing goods or services for a purchase order. Includes 20 categories with varying frequencies."
+    },
+    "event_attributes": {
+        "task_difficulty": "Ordinal categorical data, difficulty of the task, rated from 1 to 5",
+        "task_duration": "Continuous numerical data, estimated duration of the task in hours",
+        "satisfaction": "Ordinal categorical data, satisfaction level with the task, rated from 1 to 5"
+    },
+    "org_role_action": {
+        "SRM Operation Team": [
+            "SRM: Created",
+            "SRM: Complete",
+            "SRM: Awaiting Approval",
+            "SRM: Document Complete",
+            "SRM: In Transfer to Execution Syst.",
+            "SRM: Ordered",
+            "SRM: Change was Transmitted"
+        ],
+        "Purchasing and Receiving Team": [
+            "Create Purchase Order Item",
+            "Record Goods Receipt"
+        ],
+        "Invoicing Recording Team": [
+            "Record Invoice Receipt"
+        ],
+        "Invoice Clearing Team": [
+            "Clear Invoice"
+        ],
+        "Payment Processing Team": [
+            "Remove Payment Block"
+        ]
+    },
+    "ext_role_action": {},
+    "trigger_role": "SRM Operation Team",
+    "trigger_action": "SRM: Created",
+    "org_role_num": {
+        "SRM Operation Team": 2, 
+        "Purchasing and Receiving Team": 2,
+        "Invoicing Recording Team": 8,
+        "Invoice Clearing Team": 2,
+        "Payment Processing Team": 2
+    },
+    "action_data": {
+        "SRM: Created": [
+            "spend_area",
+            "sub_spend_area",
+            "net_worth",
+            "vendor"
+        ]
+    }, 
+    "last_activities": [
+        "Clear Invoice"
+    ],
+    "start_activities": [
+        "SRM: Created"
+    ],
+    "conventions": [
+        "FEMALE employers takes more time to complete the task than MALE employers in general"
+    ],
+    "control_flow_constraints": [
+        "SRM activities do not take a long time to be completed",
+        "30% of the process instances have *SRM: In Transfer to Execution System* happening before *SRM: Ordered*, 30% vice versa, and 40% have both happening simultaneously",
+        "10% of the process instances have Remove Payment Block"
+    ],
+    "resource_constraints": [
+        "50% of the SRM Operation Team members are working part-time"
+    ],
+    "_notes": "The conventions are mainly data (event vs case) constraints, control_flow and resource constraints are not yet implemented."
+}
